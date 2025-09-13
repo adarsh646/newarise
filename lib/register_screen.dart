@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'login_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'trainer_register_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -23,30 +25,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isLoading = false;
 
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    clientId:
+        "814375922264-ep3j6ckbdotdldleohfckr1bn8flcs4h.apps.googleusercontent.com",
+  );
+
+  // 🔹 Email/Password Register
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
     try {
-      // Create user
       final userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
             email: _emailController.text.trim(),
             password: _passwordController.text.trim(),
           );
 
-      // Save user info
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userCredential.user!.uid)
           .set({
-            'email': _emailController.text.trim(),
             'username': _usernameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'role': 'user',
             'createdAt': FieldValue.serverTimestamp(),
-          })
-          .then((_) {
-            setState(() => _isLoading = false);
           });
 
       Fluttertoast.showToast(
@@ -62,7 +66,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
-      // Firebase-specific errors
       String errorMessage;
       switch (e.code) {
         case 'email-already-in-use':
@@ -83,9 +86,62 @@ class _RegisterScreenState extends State<RegisterScreen> {
         textColor: Colors.white,
       );
     } catch (e) {
-      // Any unexpected error
       Fluttertoast.showToast(
         msg: "Unexpected error: $e",
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // 🔹 Google Sign-In
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        setState(() => _isLoading = false);
+        return; // User canceled
+      }
+
+      final googleAuth = await googleUser.authentication;
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+
+      final user = userCredential.user;
+      if (user != null) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'username': user.displayName ?? "Google User",
+          'email': user.email,
+          'role': 'user',
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        Fluttertoast.showToast(
+          msg: "Google Sign-In Successful 🎉",
+          backgroundColor: Colors.green,
+          textColor: Colors.white,
+        );
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+          );
+        }
+      }
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: "Google Sign-In Failed: $e",
         backgroundColor: Colors.red,
         textColor: Colors.white,
       );
@@ -141,7 +197,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
           child: ListView(
             children: [
-              // Top Image & Logo
+              // 🔹 Top Image & Logo
               SizedBox(
                 height: 300,
                 width: double.infinity,
@@ -173,7 +229,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
               const SizedBox(height: 30),
 
-              // Registration Form
+              // 🔹 Registration Form
               Form(
                 key: _formKey,
                 child: Column(
@@ -234,15 +290,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // Register Button
+                    // 🔹 Register Button
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: _isLoading
-                          ? const CircularProgressIndicator()
+                          ? const Center(child: CircularProgressIndicator())
                           : ElevatedButton(
                               onPressed: _register,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.limeAccent,
+                                backgroundColor: const Color.fromRGBO(
+                                  238,
+                                  255,
+                                  65,
+                                  1,
+                                ),
                                 minimumSize: const Size.fromHeight(50),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
@@ -260,13 +321,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
               const SizedBox(height: 10),
 
-              // Google Sign-in Button
+              // 🔹 Google Sign-in Button
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: ElevatedButton(
-                  onPressed: () {
-                    // TODO: Add Google Sign-In Logic
-                  },
+                  onPressed: _isLoading ? null : _signInWithGoogle,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(50),
@@ -292,9 +351,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
 
-              const SizedBox(height: 50),
+              const SizedBox(height: 10),
 
-              // Login Redirect
+              // 🔹 Register as Trainer Button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TrainerRegisterScreen(),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    minimumSize: const Size.fromHeight(50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    "Register as Trainer",
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 40),
+
+              // 🔹 Login Redirect
               Padding(
                 padding: const EdgeInsets.only(bottom: 20),
                 child: TextButton(

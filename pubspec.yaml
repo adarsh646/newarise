@@ -39,7 +39,12 @@ dependencies:
   firebase_auth: ^6.0.0
   cloud_firestore: ^6.0.0
   font_awesome_flutter: ^10.9.0
-
+  google_sign_in: ^6.2.1
+  firebase_storage: ^13.0.1
+  image_picker: ^1.1.2
+  intl: ^0.19.0
+  file_picker: ^8.1.2
+  url_launcher: ^6.3.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -67,6 +72,11 @@ flutter:
     - assets/splash.jpeg
     - assets/gym.jpg
     - assets/Logo.png
+    - assets/strenth.png
+    - assets/cardio.png
+    - assets/stretching.png
+    - assets/warmup.png
+
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

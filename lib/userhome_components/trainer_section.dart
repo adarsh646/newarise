@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 class TrainerSection extends StatelessWidget {
   const TrainerSection({super.key});
 
-  // This function remains the same as it correctly fetches client data.
   Future<void> _toggleRequest(
     BuildContext context,
     String trainerId,
@@ -34,9 +33,9 @@ class TrainerSection extends StatelessWidget {
       return;
     }
 
-    final clientData = clientDoc.data() as Map<String, dynamic>;
-    // Assuming clients also have a 'name' field from their registration
-    final clientName = clientData['name'] ?? 'N/A';
+    final clientData = clientDoc.data()!;
+    // ✅ CORRECTLY using 'username' for the client's name
+    final clientName = clientData['username'] ?? 'N/A';
     final clientProfileImage = clientData['profileImage'] ?? '';
 
     final docId = "$trainerId-$clientId";
@@ -51,6 +50,7 @@ class TrainerSection extends StatelessWidget {
           context,
         ).showSnackBar(const SnackBar(content: Text("Request cancelled ❌")));
       } else {
+        // ✅ Saving the complete, correct data structure
         await docRef.set({
           "trainerId": trainerId,
           "trainerName": trainerName,
@@ -81,11 +81,9 @@ class TrainerSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      // Using StreamBuilder for real-time updates
       stream: FirebaseFirestore.instance
           .collection("users")
           .where("role", isEqualTo: "trainer")
-          // ✅ FIX 1: Fetch only trainers approved by the admin
           .where("status", isEqualTo: "approved")
           .snapshots(),
       builder: (context, snapshot) {
@@ -97,31 +95,27 @@ class TrainerSection extends StatelessWidget {
         }
 
         final trainers = snapshot.data!.docs;
+        final currentUser = FirebaseAuth.instance.currentUser;
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: trainers.length,
           itemBuilder: (context, index) {
-            final trainer = trainers[index].data() as Map<String, dynamic>;
-            final trainerId = trainers[index].id;
-            final currentUser = FirebaseAuth.instance.currentUser;
+            final trainerDoc = trainers[index];
+            final trainer = trainerDoc.data() as Map<String, dynamic>;
+            final trainerId = trainerDoc.id; // Correctly get the trainer's UID
 
             if (currentUser != null && trainerId == currentUser.uid) {
               return const SizedBox.shrink();
             }
 
-            // ✅ FIX 2: Using correct field names from Firestore
             final profileImage =
                 trainer["profileImage"] ?? "https://via.placeholder.com/150";
-            final name =
-                trainer["name"] ?? "Trainer"; // Changed from 'username'
-            final specialization =
-                trainer["specialization"] ?? "Fitness Coach"; // Added field
+            final name = trainer["name"] ?? "Trainer";
+            final specialization = trainer["specialization"] ?? "Fitness Coach";
             final qualification = trainer["qualification"] ?? "N/A";
             final experience = trainer["experience"] ?? "0";
-            final fee =
-                int.tryParse(trainer["fee"]?.toString() ?? "0") ??
-                0; // Added field
+            final fee = int.tryParse(trainer["fee"]?.toString() ?? "0") ?? 0;
 
             return StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance
@@ -147,7 +141,7 @@ class TrainerSection extends StatelessWidget {
                       backgroundColor: Colors.grey.shade200,
                     ),
                     title: Text(
-                      name, // Using 'name'
+                      name,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -171,7 +165,7 @@ class TrainerSection extends StatelessWidget {
                           _toggleRequest(
                             context,
                             trainerId,
-                            name, // Pass correct name
+                            name,
                             profileImage,
                             status != null,
                           );

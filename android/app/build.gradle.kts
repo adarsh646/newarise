@@ -33,7 +33,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.arise"
+        applicationId = "com.company.arise"
         minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode

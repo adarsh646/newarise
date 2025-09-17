@@ -7,7 +7,6 @@ class TrainerClientsPage extends StatelessWidget {
 
   Future<void> _updateRequest(String clientId, String status) async {
     final trainerId = FirebaseAuth.instance.currentUser!.uid;
-
     await FirebaseFirestore.instance
         .collection("trainer_requests")
         .doc("$trainerId-$clientId")
@@ -19,10 +18,6 @@ class TrainerClientsPage extends StatelessWidget {
     final trainerId = FirebaseAuth.instance.currentUser!.uid;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("My Clients"),
-        backgroundColor: const Color.fromARGB(255, 238, 255, 65),
-      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection("trainer_requests")
@@ -32,130 +27,140 @@ class TrainerClientsPage extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+          if (snapshot.hasError) {
+            return const Center(child: Text("An error occurred."));
+          }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(child: Text("No client requests yet."));
           }
 
           final requests = snapshot.data!.docs;
 
-          return ListView.builder(
-            itemCount: requests.length,
-            itemBuilder: (context, index) {
-              final request = requests[index];
-              final clientId = request["clientId"];
-              final status = request["status"];
+          // Separate requests into different lists for a cleaner UI
+          final pendingRequests = requests
+              .where((doc) => doc['status'] == 'pending')
+              .toList();
+          final acceptedClients = requests
+              .where((doc) => doc['status'] == 'accepted')
+              .toList();
+          final rejectedRequests = requests
+              .where((doc) => doc['status'] == 'rejected')
+              .toList();
 
-              return FutureBuilder<DocumentSnapshot>(
-                future: FirebaseFirestore.instance
-                    .collection("users")
-                    .doc(clientId)
-                    .get(),
-                builder: (context, userSnapshot) {
-                  if (!userSnapshot.hasData) {
-                    return const ListTile(title: Text("Loading client..."));
-                  }
-
-                  final user = userSnapshot.data!;
-                  final username = user["username"] ?? "User";
-                  final email = user["email"] ?? "";
-
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 8),
-                    child: ListTile(
-                      title: Text(username),
-                      subtitle: Text(email),
-                      trailing: status == "pending"
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                ElevatedButton(
-                                  onPressed: () async {
-                                    await _updateRequest(clientId, "accepted");
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                  ),
-                                  child: const Text("Accept"),
-                                ),
-                                const SizedBox(width: 8),
-                                ElevatedButton(
-                                  onPressed: () async {
-                                    await _updateRequest(clientId, "rejected");
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red,
-                                  ),
-                                  child: const Text("Reject"),
-                                ),
-                              ],
-                            )
-                          : Text(
-                              status == "accepted"
-                                  ? "Accepted ✅"
-                                  : "Rejected ❌",
-                              style: TextStyle(
-                                color: status == "accepted"
-                                    ? Colors.green
-                                    : Colors.red,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ClientDetailPage(
-                              username: username,
-                              email: email,
-                              userData: user.data() as Map<String, dynamic>,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  );
-                },
-              );
-            },
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (pendingRequests.isNotEmpty) ...[
+                const Text(
+                  "Pending Requests",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                ...pendingRequests.map(
+                  (req) => _buildRequestCard(context, req),
+                ),
+                const SizedBox(height: 24),
+              ],
+              if (acceptedClients.isNotEmpty) ...[
+                const Text(
+                  "My Clients",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                ...acceptedClients.map(
+                  (req) => _buildRequestCard(context, req),
+                ),
+                const SizedBox(height: 24),
+              ],
+              if (rejectedRequests.isNotEmpty) ...[
+                const Text(
+                  "Archived Requests",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+                ...rejectedRequests.map(
+                  (req) => _buildRequestCard(context, req),
+                ),
+              ],
+            ],
           );
         },
       ),
     );
   }
-}
 
-class ClientDetailPage extends StatelessWidget {
-  final String username;
-  final String email;
-  final Map<String, dynamic> userData;
+  /// Builds each card using data ONLY from the request document.
+  Widget _buildRequestCard(BuildContext context, DocumentSnapshot request) {
+    final data = request.data() as Map<String, dynamic>;
+    final clientId = data["clientId"];
+    final status = data["status"] ?? "pending";
+    final clientName = data["clientName"] ?? "Client";
+    final clientProfileImage = data["clientProfileImage"];
 
-  const ClientDetailPage({
-    super.key,
-    required this.username,
-    required this.email,
-    required this.userData,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(username),
-        backgroundColor: const Color.fromARGB(255, 238, 255, 65),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Email: $email"),
-            const SizedBox(height: 10),
-            Text("Age: ${userData["age"] ?? "N/A"}"),
-            Text("Goal: ${userData["goal"] ?? "N/A"}"),
-            Text("Activity Level: ${userData["activityLevel"] ?? "N/A"}"),
-          ],
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundImage:
+              clientProfileImage != null && clientProfileImage.isNotEmpty
+              ? NetworkImage(clientProfileImage)
+              : null,
+          child: clientProfileImage == null || clientProfileImage.isEmpty
+              ? const Icon(Icons.person)
+              : null,
         ),
+        title: Text(
+          clientName,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          'Status: ${status.toString().capitalize()}',
+          style: TextStyle(color: _getStatusColor(status)),
+        ),
+        trailing: status == "pending"
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 28,
+                    ),
+                    onPressed: () => _updateRequest(clientId, "accepted"),
+                    tooltip: 'Accept',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.cancel, color: Colors.red, size: 28),
+                    onPressed: () => _updateRequest(clientId, "rejected"),
+                    tooltip: 'Reject',
+                  ),
+                ],
+              )
+            : null,
       ),
     );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'accepted':
+        return Colors.green;
+      case 'rejected':
+        return Colors.red;
+      default:
+        return Colors.orange;
+    }
+  }
+}
+
+// Helper extension to capitalize strings
+extension StringExtension on String {
+  String capitalize() {
+    if (this.isEmpty) return "";
+    return "${this[0].toUpperCase()}${this.substring(1)}";
   }
 }

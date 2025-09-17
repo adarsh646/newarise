@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
@@ -17,15 +18,201 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _qualificationController = TextEditingController();
   final _experienceController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
   File? _profileImage;
   File? _certificateFile;
 
   bool _isLoading = false;
+  bool _isPasswordVisible = false;
 
   final ImagePicker _picker = ImagePicker();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _qualificationController.dispose();
+    _experienceController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  /// Handles the entire multi-step registration flow with phone verification.
+  Future<void> _submitTrainerApplication() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_profileImage == null || _certificateFile == null) {
+      Fluttertoast.showToast(
+        msg: "Please upload a profile image and certificate",
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    User? tempAuthUser;
+
+    try {
+      // Step 1: Create the user with email/password first
+      final userCredential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text.trim(),
+          );
+      tempAuthUser = userCredential.user;
+      if (tempAuthUser == null)
+        throw Exception("Failed to create user account.");
+
+      // Step 1.5: Send email verification link
+      await tempAuthUser.sendEmailVerification();
+
+      // Step 2: Begin phone number verification
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: _phoneController.text.trim(),
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          // This is for auto-retrieval on some Android devices.
+          // The loader will still be on, which is fine.
+          await tempAuthUser!.linkWithCredential(credential);
+          await _uploadFilesAndSaveData(tempAuthUser!.uid);
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          // Turn off loading and show error if phone verification fails
+          if (mounted) setState(() => _isLoading = false);
+          Fluttertoast.showToast(
+            msg: "Phone verification failed: ${e.message}",
+          );
+          // Rethrow to trigger the cleanup in the main catch block
+          throw e;
+        },
+        codeSent: (String verificationId, int? resendToken) async {
+          // Step 3: Turn off the loader and show the OTP pop-up dialog
+          if (mounted) setState(() => _isLoading = false);
+          String? smsCode = await _showOtpDialog();
+
+          if (smsCode != null && smsCode.isNotEmpty) {
+            // Turn the loader back on for the final processing step
+            if (mounted) setState(() => _isLoading = true);
+
+            PhoneAuthCredential credential = PhoneAuthProvider.credential(
+              verificationId: verificationId,
+              smsCode: smsCode,
+            );
+            // Step 4: Link the phone number to the new account
+            await tempAuthUser!.linkWithCredential(credential);
+
+            // Step 5: If successful, proceed to upload files and save data
+            await _uploadFilesAndSaveData(tempAuthUser!.uid);
+          } else {
+            // User cancelled the dialog
+            throw Exception("OTP verification cancelled.");
+          }
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {},
+      );
+    } catch (e) {
+      // Critical Cleanup Step: If anything fails, delete the partially created user
+      if (tempAuthUser != null) {
+        await tempAuthUser.delete();
+        print("Cleaned up partially created user account.");
+      }
+
+      String errorMessage = "An error occurred. Please try again.";
+      if (e is FirebaseAuthException) {
+        if (e.code == 'invalid-phone-number') {
+          errorMessage = 'The phone number provided is not valid.';
+        } else if (e.code == 'email-already-in-use') {
+          errorMessage = 'An account already exists for that email.';
+        } else {
+          errorMessage = e.message ?? errorMessage;
+        }
+      } else if (e is Exception) {
+        errorMessage = e.toString().replaceFirst("Exception: ", "");
+      }
+
+      Fluttertoast.showToast(msg: errorMessage, backgroundColor: Colors.red);
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Contains the logic for file uploads and saving data to Firestore.
+  Future<void> _uploadFilesAndSaveData(String uid) async {
+    final profileUrl = await _uploadFile(
+      _profileImage!,
+      "trainers/$uid/profile.jpg",
+    );
+    final certUrl = await _uploadFile(
+      _certificateFile!,
+      "trainers/$uid/certificate.pdf",
+    );
+
+    if (profileUrl == null || certUrl == null) {
+      throw Exception(
+        "File upload failed.",
+      ); // This will be caught and trigger user cleanup
+    }
+
+    await FirebaseFirestore.instance.collection("users").doc(uid).set({
+      "name": _nameController.text.trim(),
+      "email": _emailController.text.trim(),
+      "phoneNumber": _phoneController.text.trim(),
+      "qualification": _qualificationController.text.trim(),
+      "experience": _experienceController.text.trim(),
+      "role": "trainer",
+      "status": "pending",
+      "profileImage": profileUrl,
+      "certificateUrl": certUrl,
+      "createdAt": FieldValue.serverTimestamp(),
+    });
+
+    Fluttertoast.showToast(
+      msg: "Application Submitted! Please verify your email.",
+      backgroundColor: Colors.green,
+      toastLength: Toast.LENGTH_LONG,
+    );
+
+    if (mounted) {
+      // Pop all the way back to the first screen (e.g., the login/register choice screen)
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
+  }
+
+  /// Shows the pop-up dialog for OTP entry.
+  Future<String?> _showOtpDialog() {
+    final otpController = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Enter Verification Code"),
+          content: TextField(
+            controller: otpController,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: "6-digit code"),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null), // Cancel
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(otpController.text.trim());
+              },
+              child: const Text("Verify"),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   Future<void> _pickImage() async {
     final picked = await _picker.pickImage(source: ImageSource.gallery);
@@ -47,66 +234,8 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
       await ref.putFile(file);
       return await ref.getDownloadURL();
     } catch (e) {
-      Fluttertoast.showToast(
-        msg: "Upload failed: $e",
-        backgroundColor: Colors.red,
-      );
+      Fluttertoast.showToast(msg: "Upload failed: $e");
       return null;
-    }
-  }
-
-  Future<void> _submitTrainerApplication() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_profileImage == null) {
-      Fluttertoast.showToast(msg: "Please upload a profile image");
-      return;
-    }
-    if (_certificateFile == null) {
-      Fluttertoast.showToast(msg: "Please upload a certificate");
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      // 🔹 Upload profile image
-      final profileUrl = await _uploadFile(
-        _profileImage!,
-        "trainers/profile_${DateTime.now().millisecondsSinceEpoch}.jpg",
-      );
-
-      // 🔹 Upload certificate
-      final certUrl = await _uploadFile(
-        _certificateFile!,
-        "trainers/certificate_${DateTime.now().millisecondsSinceEpoch}.pdf",
-      );
-
-      // 🔹 Save to Firestore "users"
-      await FirebaseFirestore.instance.collection("users").add({
-        "name": _nameController.text.trim(),
-        "email": _emailController.text.trim(),
-        "qualification": _qualificationController.text.trim(),
-        "experience": _experienceController.text.trim(),
-        "role": "trainer",
-        "status": "pending", // admin will approve/reject
-        "profileImage": profileUrl,
-        "certificateUrl": certUrl,
-        "createdAt": FieldValue.serverTimestamp(),
-      });
-
-      Fluttertoast.showToast(
-        msg: "Application Submitted ✅ Awaiting Admin Approval",
-        backgroundColor: Colors.green,
-      );
-
-      Navigator.pop(context);
-    } catch (e) {
-      Fluttertoast.showToast(
-        msg: "Error submitting application: $e",
-        backgroundColor: Colors.red,
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -116,6 +245,7 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
       appBar: AppBar(
         title: const Text("Trainer Registration"),
         backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
@@ -123,22 +253,28 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              // 🔹 Profile Image Picker
               GestureDetector(
                 onTap: _pickImage,
                 child: CircleAvatar(
                   radius: 50,
                   backgroundColor: Colors.grey[300],
-                  backgroundImage: _profileImage != null
-                      ? FileImage(_profileImage!)
-                      : null,
                   child: _profileImage == null
-                      ? const Icon(Icons.camera_alt, size: 40)
-                      : null,
+                      ? Icon(
+                          Icons.camera_alt,
+                          size: 40,
+                          color: Colors.grey[800],
+                        )
+                      : ClipOval(
+                          child: Image.file(
+                            _profileImage!,
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 20),
-
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: "Full Name"),
@@ -147,8 +283,49 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
               TextFormField(
                 controller: _emailController,
                 decoration: const InputDecoration(labelText: "Email"),
+                keyboardType: TextInputType.emailAddress,
                 validator: (v) =>
                     v == null || !v.contains("@") ? "Enter valid email" : null,
+              ),
+              TextFormField(
+                controller: _phoneController,
+                decoration: const InputDecoration(
+                  labelText: "Phone Number (e.g., +16505551234)",
+                ),
+                keyboardType: TextInputType.phone,
+                validator: (v) => v == null || v.isEmpty || !v.startsWith('+')
+                    ? "Enter a valid phone number with country code"
+                    : null,
+              ),
+              TextFormField(
+                controller: _passwordController,
+                obscureText: !_isPasswordVisible,
+                decoration: InputDecoration(
+                  labelText: "Password",
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _isPasswordVisible
+                          ? Icons.visibility
+                          : Icons.visibility_off,
+                    ),
+                    onPressed: () => setState(
+                      () => _isPasswordVisible = !_isPasswordVisible,
+                    ),
+                  ),
+                ),
+                validator: (v) => v == null || v.length < 6
+                    ? "Password must be at least 6 characters"
+                    : null,
+              ),
+              TextFormField(
+                controller: _confirmPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: "Confirm Password",
+                ),
+                validator: (v) => v != _passwordController.text
+                    ? "Passwords do not match"
+                    : null,
               ),
               TextFormField(
                 controller: _qualificationController,
@@ -161,12 +338,11 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
                 decoration: const InputDecoration(
                   labelText: "Experience (years)",
                 ),
+                keyboardType: TextInputType.number,
                 validator: (v) =>
                     v == null || v.isEmpty ? "Enter experience" : null,
               ),
               const SizedBox(height: 20),
-
-              // 🔹 Certificate Upload
               ElevatedButton.icon(
                 onPressed: _pickCertificate,
                 icon: const Icon(Icons.upload_file),
@@ -176,7 +352,6 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
                       : "Certificate Selected",
                 ),
               ),
-
               const SizedBox(height: 20),
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -184,6 +359,7 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
                       onPressed: _submitTrainerApplication,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
                         minimumSize: const Size.fromHeight(50),
                       ),
                       child: const Text("Submit Application"),

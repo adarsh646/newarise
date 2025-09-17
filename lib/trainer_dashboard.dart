@@ -4,8 +4,29 @@ import 'trainerhome_components/trainer_clients.dart';
 import 'trainerhome_components/trainer_workouts.dart';
 import 'trainerhome_components/trainer_profile.dart';
 
-class TrainerDashboard extends StatelessWidget {
+// Converted to a StatefulWidget to manage the navigation state
+class TrainerDashboard extends StatefulWidget {
   const TrainerDashboard({super.key});
+
+  @override
+  State<TrainerDashboard> createState() => _TrainerDashboardState();
+}
+
+class _TrainerDashboardState extends State<TrainerDashboard> {
+  int _selectedIndex = 0;
+
+  // List of the main pages for the trainer
+  static const List<Widget> _pages = <Widget>[
+    TrainerClientsPage(),
+    TrainerWorkoutsPage(),
+    TrainerProfilePage(),
+  ];
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
 
   void _logout(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
@@ -15,103 +36,43 @@ class TrainerDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      // ✅ AppBar styled to match the AdminDashboard
       appBar: AppBar(
-        title: const Text("Trainer Dashboard"),
+        title: const Text(
+          "ARISE",
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
         backgroundColor: const Color.fromARGB(255, 238, 255, 65),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout, color: Colors.black),
             onPressed: () => _logout(context),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildDashboardCard(
-            title: "My Clients",
-            icon: Icons.people,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const TrainerClientsPage(),
-                ),
-              );
-            },
-          ),
-          _buildDashboardCard(
-            title: "Assigned Workouts",
-            icon: Icons.assignment,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const TrainerWorkoutsPage(),
-                ),
-              );
-            },
-          ),
-          _buildDashboardCard(
-            title: "Profile & Qualifications",
-            icon: Icons.badge,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const TrainerProfilePage(),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
+      // The body now shows the selected page from the navigation bar
+      body: _pages.elementAt(_selectedIndex),
 
-  Widget _buildDashboardCard({
-    required String title,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.3),
-              blurRadius: 8,
-              spreadRadius: 2,
-              offset: const Offset(3, 5),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 32,
-              color: const Color.fromARGB(255, 238, 255, 65),
-            ),
-            const SizedBox(width: 20),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const Icon(Icons.arrow_forward_ios, color: Colors.black54),
-          ],
-        ),
+      // ✅ BottomNavigationBar added with the same professional theme
+      bottomNavigationBar: BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.people),
+            label: 'My Clients',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.assignment),
+            label: 'Workouts',
+          ),
+          BottomNavigationBarItem(icon: Icon(Icons.badge), label: 'Profile'),
+        ],
+        currentIndex: _selectedIndex,
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: const Color.fromARGB(255, 238, 255, 65),
+        selectedItemColor: Colors.black,
+        unselectedItemColor: Colors.grey.shade700,
+        onTap: _onItemTapped,
       ),
     );
   }

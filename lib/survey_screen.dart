@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import '../services/plan_generator_service.dart';
 
 class SurveyScreen extends StatefulWidget {
   const SurveyScreen({super.key});
@@ -17,13 +18,14 @@ class _SurveyScreenState extends State<SurveyScreen> {
   final weightController = TextEditingController();
 
   String gender = "Male";
-  String activityLevel = "Beginner"; // ✅ must match dropdown items
-  String fitnessGoal = "Overall Fitness"; // ✅ must match dropdown items
+  String activityLevel = "Beginner";
+  String fitnessGoal = "Overall Fitness";
 
   DateTime? dob;
   int? age;
 
   int _currentStep = 0;
+  bool _isSubmitting = false;
 
   final List<String> _questions = [
     "What is your Date of Birth?",
@@ -34,7 +36,6 @@ class _SurveyScreenState extends State<SurveyScreen> {
     "How much are you engaged in physical activities?",
   ];
 
-  // --- Pick DOB and calculate age ---
   Future<void> _pickDob() async {
     DateTime? picked = await showDatePicker(
       context: context,
@@ -55,21 +56,20 @@ class _SurveyScreenState extends State<SurveyScreen> {
     }
   }
 
-  // --- Calculate BMI ---
   double? _calculateBmi() {
     final h = double.tryParse(heightController.text);
     final w = double.tryParse(weightController.text);
     if (h != null && w != null && h > 0) {
-      final heightInMeters = h / 100; // convert cm → meters
+      final heightInMeters = h / 100;
       return w / (heightInMeters * heightInMeters);
     }
     return null;
   }
 
   Future<void> _submitSurvey() async {
+    setState(() => _isSubmitting = true);
     try {
       String uid = FirebaseAuth.instance.currentUser!.uid;
-
       final bmi = _calculateBmi();
 
       await FirebaseFirestore.instance.collection("surveys").doc(uid).set({
@@ -78,25 +78,39 @@ class _SurveyScreenState extends State<SurveyScreen> {
         "gender": gender,
         "height": heightController.text,
         "weight": weightController.text,
-        "bmi": bmi?.toStringAsFixed(2), // ✅ store BMI
+        "bmi": bmi?.toStringAsFixed(2),
         "goal": fitnessGoal,
         "activityLevel": activityLevel,
         "timestamp": FieldValue.serverTimestamp(),
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Survey Submitted Successfully ✅")),
-      );
+      await PlanGeneratorService().generateAndSavePlan(userId: uid);
 
-      Navigator.pop(context);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Success! Your personalized plan is being generated. ✅",
+            ),
+          ),
+        );
+        Navigator.pop(context);
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
   Widget _buildQuestion() {
+    // This switch statement remains the same
     switch (_currentStep) {
       case 0:
         return Column(
@@ -135,38 +149,32 @@ class _SurveyScreenState extends State<SurveyScreen> {
       case 2:
         return TextFormField(
           controller: heightController,
-          keyboardType: const TextInputType.numberWithOptions(
-            decimal: true,
-          ), // ✅ decimals
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(labelText: "Height (cm)"),
           validator: (value) {
             if (value == null || value.isEmpty) return "Enter your height";
             final h = double.tryParse(value);
-            if (h == null || h < 50 || h > 300) {
+            if (h == null || h < 50 || h > 300)
               return "Enter a valid height (50–300 cm)";
-            }
             return null;
           },
         );
       case 3:
         return TextFormField(
           controller: weightController,
-          keyboardType: const TextInputType.numberWithOptions(
-            decimal: true,
-          ), // ✅ decimals
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(labelText: "Weight (kg)"),
           validator: (value) {
             if (value == null || value.isEmpty) return "Enter your weight";
             final w = double.tryParse(value);
-            if (w == null || w < 20 || w > 500) {
+            if (w == null || w < 20 || w > 500)
               return "Enter a valid weight (20–500 kg)";
-            }
             return null;
           },
         );
       case 4:
         return DropdownButtonFormField(
-          value: fitnessGoal, // ✅ matches items
+          value: fitnessGoal,
           decoration: const InputDecoration(labelText: "Fitness Goal"),
           items: [
             "Overall Fitness",
@@ -181,7 +189,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
         );
       case 5:
         return DropdownButtonFormField(
-          value: activityLevel, // ✅ matches items
+          value: activityLevel,
           decoration: const InputDecoration(labelText: "Activity Level"),
           items: [
             "Beginner",
@@ -195,18 +203,28 @@ class _SurveyScreenState extends State<SurveyScreen> {
     }
   }
 
+  // ✅ THIS FUNCTION IS UPDATED
   void _nextStep() {
-    if (_currentStep == 0 && dob == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please select your DOB")));
-      return;
+    // --- Step-specific validation for DOB/Age ---
+    if (_currentStep == 0) {
+      if (dob == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Please select your Date of Birth.")),
+        );
+        return; // Stop processing
+      }
+      if (age! < 10 || age! > 100) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Age must be between 10 and 100.")),
+        );
+        return; // Stop processing
+      }
     }
+
+    // --- General validation for TextFormFields etc. ---
     if (_formKey.currentState!.validate()) {
       if (_currentStep < _questions.length - 1) {
-        setState(() {
-          _currentStep++;
-        });
+        setState(() => _currentStep++);
       } else {
         _submitSurvey();
       }
@@ -215,9 +233,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
 
   void _prevStep() {
     if (_currentStep > 0) {
-      setState(() {
-        _currentStep--;
-      });
+      setState(() => _currentStep--);
     }
   }
 
@@ -264,7 +280,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
                       ),
                     ),
                   ElevatedButton(
-                    onPressed: _nextStep,
+                    onPressed: _isSubmitting ? null : _nextStep,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color.fromARGB(255, 238, 255, 65),
                       foregroundColor: Colors.black,
@@ -276,10 +292,21 @@ class _SurveyScreenState extends State<SurveyScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: Text(
-                      _currentStep == _questions.length - 1 ? "Submit" : "Next",
-                      style: const TextStyle(fontSize: 16),
-                    ),
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.black,
+                            ),
+                          )
+                        : Text(
+                            _currentStep == _questions.length - 1
+                                ? "Submit"
+                                : "Next",
+                            style: const TextStyle(fontSize: 16),
+                          ),
                   ),
                 ],
               ),

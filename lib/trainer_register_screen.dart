@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'login_screen.dart';
 import 'package:file_picker/file_picker.dart';
 
 class TrainerRegisterScreen extends StatefulWidget {
@@ -78,8 +79,14 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
         verificationCompleted: (PhoneAuthCredential credential) async {
           // This is for auto-retrieval on some Android devices.
           // The loader will still be on, which is fine.
-          await tempAuthUser!.linkWithCredential(credential);
-          await _uploadFilesAndSaveData(tempAuthUser!.uid);
+          try {
+            if (tempAuthUser == null) throw Exception('User not initialized');
+            await tempAuthUser.linkWithCredential(credential);
+            await _uploadFilesAndSaveData(tempAuthUser.uid);
+          } catch (e) {
+            if (mounted) setState(() => _isLoading = false);
+            rethrow;
+          }
         },
         verificationFailed: (FirebaseAuthException e) {
           // Turn off loading and show error if phone verification fails
@@ -99,18 +106,31 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
             // Turn the loader back on for the final processing step
             if (mounted) setState(() => _isLoading = true);
 
-            PhoneAuthCredential credential = PhoneAuthProvider.credential(
-              verificationId: verificationId,
-              smsCode: smsCode,
-            );
-            // Step 4: Link the phone number to the new account
-            await tempAuthUser!.linkWithCredential(credential);
+            try {
+              PhoneAuthCredential credential = PhoneAuthProvider.credential(
+                verificationId: verificationId,
+                smsCode: smsCode,
+              );
+              // Step 4: Link the phone number to the new account
+              if (tempAuthUser == null) throw Exception('User not initialized');
+              await tempAuthUser.linkWithCredential(credential);
 
-            // Step 5: If successful, proceed to upload files and save data
-            await _uploadFilesAndSaveData(tempAuthUser!.uid);
+              // Step 5: If successful, proceed to upload files and save data
+              await _uploadFilesAndSaveData(tempAuthUser.uid);
+            } catch (e) {
+              // Rollback partially created user if linking/upload fails
+              try {
+                await tempAuthUser?.delete();
+              } catch (_) {}
+              Fluttertoast.showToast(
+                msg: 'Verification failed: $e',
+                backgroundColor: Colors.red,
+              );
+              if (mounted) setState(() => _isLoading = false);
+            }
           } else {
             // User cancelled the dialog
-            throw Exception("OTP verification cancelled.");
+            Fluttertoast.showToast(msg: 'OTP verification cancelled.');
           }
         },
         codeAutoRetrievalTimeout: (String verificationId) {},
@@ -142,43 +162,47 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
 
   /// Contains the logic for file uploads and saving data to Firestore.
   Future<void> _uploadFilesAndSaveData(String uid) async {
-    final profileUrl = await _uploadFile(
-      _profileImage!,
-      "trainers/$uid/profile.jpg",
-    );
-    final certUrl = await _uploadFile(
-      _certificateFile!,
-      "trainers/$uid/certificate.pdf",
-    );
+    try {
+      final profileUrl = await _uploadFile(
+        _profileImage!,
+        "trainers/$uid/profile.jpg",
+      );
+      final certUrl = await _uploadFile(
+        _certificateFile!,
+        "trainers/$uid/certificate.pdf",
+      );
 
-    if (profileUrl == null || certUrl == null) {
-      throw Exception(
-        "File upload failed.",
-      ); // This will be caught and trigger user cleanup
-    }
+      if (profileUrl == null || certUrl == null) {
+        throw Exception("File upload failed.");
+      }
 
-    await FirebaseFirestore.instance.collection("users").doc(uid).set({
-      "name": _nameController.text.trim(),
-      "email": _emailController.text.trim(),
-      "phoneNumber": _phoneController.text.trim(),
-      "qualification": _qualificationController.text.trim(),
-      "experience": _experienceController.text.trim(),
-      "role": "trainer",
-      "status": "pending",
-      "profileImage": profileUrl,
-      "certificateUrl": certUrl,
-      "createdAt": FieldValue.serverTimestamp(),
-    });
+      await FirebaseFirestore.instance.collection("users").doc(uid).set({
+        "name": _nameController.text.trim(),
+        "email": _emailController.text.trim(),
+        "phoneNumber": _phoneController.text.trim(),
+        "qualification": _qualificationController.text.trim(),
+        "experience": _experienceController.text.trim(),
+        "role": "trainer",
+        "status": "pending",
+        "profileImage": profileUrl,
+        "certificateUrl": certUrl,
+        "createdAt": FieldValue.serverTimestamp(),
+      });
 
-    Fluttertoast.showToast(
-      msg: "Application Submitted! Please verify your email.",
-      backgroundColor: Colors.green,
-      toastLength: Toast.LENGTH_LONG,
-    );
+      Fluttertoast.showToast(
+        msg: "Application Submitted! Awaiting admin approval.",
+        backgroundColor: Colors.green,
+        toastLength: Toast.LENGTH_LONG,
+      );
 
-    if (mounted) {
-      // Pop all the way back to the first screen (e.g., the login/register choice screen)
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

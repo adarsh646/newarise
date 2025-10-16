@@ -15,11 +15,8 @@ class TrainerProfilePage extends StatefulWidget {
 class _TrainerProfilePageState extends State<TrainerProfilePage> {
   final uid = FirebaseAuth.instance.currentUser!.uid;
   final _formKey = GlobalKey<FormState>();
-
-  // ✅ Switched to TextEditingControllers for better state management
   late TextEditingController _nameController;
   late TextEditingController _feeController;
-
   File? _imageFile;
   final picker = ImagePicker();
   bool _isSaving = false;
@@ -63,17 +60,29 @@ class _TrainerProfilePageState extends State<TrainerProfilePage> {
       String? imageUrl = await _uploadImage();
       final userRef = FirebaseFirestore.instance.collection("users").doc(uid);
 
-      // ✅ FIX: Using the correct field names 'name' and 'fee'
-      final updateData = {
+      // First, get the user's existing data to access their role
+      final userSnapshot = await userRef.get();
+      final userData = userSnapshot.data() ?? <String, dynamic>{};
+
+      final num? parsedFee = num.tryParse(_feeController.text.trim());
+
+      final Map<String, dynamic> updateData = {
         "name": _nameController.text.trim(),
-        "fee": _feeController.text.trim(),
+        // Store fee as number when possible
+        if (parsedFee != null)
+          "fee": parsedFee
+        else
+          "fee": _feeController.text.trim(),
+        // Preserve role if present; do not overwrite with null
+        if (userData.containsKey("role") && userData["role"] != null)
+          "role": userData["role"],
       };
 
       if (imageUrl != null) {
         updateData["profileImage"] = imageUrl;
       }
 
-      await userRef.update(updateData);
+      await userRef.set(updateData, SetOptions(merge: true));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -98,7 +107,6 @@ class _TrainerProfilePageState extends State<TrainerProfilePage> {
         title: const Text("Trainer Profile"),
         backgroundColor: const Color.fromARGB(255, 238, 255, 65),
       ),
-      // ✅ Switched to StreamBuilder for real-time UI updates after saving
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection("users")
@@ -114,9 +122,16 @@ class _TrainerProfilePageState extends State<TrainerProfilePage> {
 
           final userData = snapshot.data!.data() as Map<String, dynamic>;
 
-          // Populate controllers with data from Firestore
-          _nameController.text = userData["name"] ?? "";
-          _feeController.text = userData["fee"]?.toString() ?? "";
+          // This prevents the cursor from jumping to the start on every rebuild
+          final newName = userData["name"] ?? "";
+          if (_nameController.text != newName) {
+            _nameController.text = newName;
+          }
+
+          final newFee = userData["fee"]?.toString() ?? "";
+          if (_feeController.text != newFee) {
+            _feeController.text = newFee;
+          }
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -142,8 +157,6 @@ class _TrainerProfilePageState extends State<TrainerProfilePage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-
-                  // ✅ FIX: Using controller and correct field 'name'
                   TextFormField(
                     controller: _nameController,
                     decoration: const InputDecoration(
@@ -154,8 +167,6 @@ class _TrainerProfilePageState extends State<TrainerProfilePage> {
                         val == null || val.isEmpty ? "Enter your name" : null,
                   ),
                   const SizedBox(height: 16),
-
-                  // ✅ FIX: Using controller and correct field 'fee'
                   TextFormField(
                     controller: _feeController,
                     decoration: const InputDecoration(
@@ -167,9 +178,8 @@ class _TrainerProfilePageState extends State<TrainerProfilePage> {
                         val == null || val.isEmpty ? "Enter your fee" : null,
                   ),
                   const SizedBox(height: 16),
-
-                  // Non-editable fields remain the same
                   TextFormField(
+                    key: ValueKey(userData["qualification"]),
                     initialValue: userData["qualification"] ?? "N/A",
                     decoration: const InputDecoration(
                       labelText: "Qualification (Read-only)",
@@ -178,8 +188,8 @@ class _TrainerProfilePageState extends State<TrainerProfilePage> {
                     readOnly: true,
                   ),
                   const SizedBox(height: 16),
-
                   TextFormField(
+                    key: ValueKey(userData["specialization"]),
                     initialValue: userData["specialization"] ?? "N/A",
                     decoration: const InputDecoration(
                       labelText: "Specialization (Read-only)",
@@ -188,7 +198,6 @@ class _TrainerProfilePageState extends State<TrainerProfilePage> {
                     readOnly: true,
                   ),
                   const SizedBox(height: 30),
-
                   _isSaving
                       ? const CircularProgressIndicator()
                       : ElevatedButton.icon(

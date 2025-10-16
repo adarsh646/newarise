@@ -20,6 +20,9 @@ class _SurveyScreenState extends State<SurveyScreen> {
   String gender = "Male";
   String activityLevel = "Beginner";
   String fitnessGoal = "Overall Fitness";
+  int daysPerWeek = 5; // new
+  int sessionDuration = 45; // minutes - new
+  int planDurationWeeks = 8; // new
 
   DateTime? dob;
   int? age;
@@ -34,6 +37,9 @@ class _SurveyScreenState extends State<SurveyScreen> {
     "What is your weight (kg)?",
     "What is your fitness goal?",
     "How much are you engaged in physical activities?",
+    "How many days per week can you work out?",
+    "How long is each session (minutes)?",
+    "How many weeks should the plan cover?",
   ];
 
   Future<void> _pickDob() async {
@@ -81,6 +87,9 @@ class _SurveyScreenState extends State<SurveyScreen> {
         "bmi": bmi?.toStringAsFixed(2),
         "goal": fitnessGoal,
         "activityLevel": activityLevel,
+        "daysPerWeek": daysPerWeek,
+        "sessionDuration": sessionDuration,
+        "planDurationWeeks": planDurationWeeks,
         "timestamp": FieldValue.serverTimestamp(),
       });
 
@@ -197,6 +206,33 @@ class _SurveyScreenState extends State<SurveyScreen> {
             "Advanced",
           ].map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
           onChanged: (val) => setState(() => activityLevel = val!),
+        );
+      case 6:
+        return DropdownButtonFormField<int>(
+          value: daysPerWeek,
+          decoration: const InputDecoration(labelText: "Days per week"),
+          items: List.generate(7, (i) => i + 1)
+              .map((d) => DropdownMenuItem(value: d, child: Text("$d days")))
+              .toList(),
+          onChanged: (val) => setState(() => daysPerWeek = val ?? 5),
+        );
+      case 7:
+        return DropdownButtonFormField<int>(
+          value: sessionDuration,
+          decoration: const InputDecoration(labelText: "Session duration (minutes)"),
+          items: const [20, 30, 45, 60, 75, 90]
+              .map((d) => DropdownMenuItem(value: d, child: Text("$d minutes")))
+              .toList(),
+          onChanged: (val) => setState(() => sessionDuration = val ?? 45),
+        );
+      case 8:
+        return DropdownButtonFormField<int>(
+          value: planDurationWeeks,
+          decoration: const InputDecoration(labelText: "Plan duration (weeks)"),
+          items: const [4, 6, 8, 10, 12, 16]
+              .map((w) => DropdownMenuItem(value: w, child: Text("$w weeks")))
+              .toList(),
+          onChanged: (val) => setState(() => planDurationWeeks = val ?? 8),
         );
       default:
         return const SizedBox();

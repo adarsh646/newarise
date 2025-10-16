@@ -1,20 +1,15 @@
 import 'package:flutter/material.dart';
 
-// 1. Import the specific pages for each workout category.
-//    (Adjust these paths to match your project structure)
 import 'package:arise/workouts/strength.dart';
 import 'package:arise/workouts/cardio.dart';
 import 'package:arise/workouts/stretching.dart';
 import 'package:arise/workouts/warmup.dart';
 
-// Renamed for clarity to better match the file name and purpose
-class TrainerWorkoutsPage extends StatelessWidget {
-  const TrainerWorkoutsPage({super.key});
+class UserWorkoutsPage extends StatelessWidget {
+  const UserWorkoutsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // 2. Updated list: Removed dummy exercises and added a 'page' key
-    //    to hold the destination widget for each category.
     final workoutCategories = [
       {
         "title": "Strength",
@@ -41,10 +36,9 @@ class TrainerWorkoutsPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          "Workout Categories",
+          "Workouts",
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        // Using your app's theme color for consistency
         backgroundColor: const Color.fromARGB(255, 238, 255, 65),
         foregroundColor: Colors.black,
         elevation: 0,
@@ -56,8 +50,6 @@ class TrainerWorkoutsPage extends StatelessWidget {
           final category = workoutCategories[index];
           return GestureDetector(
             onTap: () {
-              // 3. Updated Navigation: Pushes the specific page widget
-              //    associated with the tapped category.
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => category["page"] as Widget),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'login_screen.dart';
 import 'trainerhome_components/trainer_clients.dart';
 import 'trainerhome_components/trainer_workouts.dart';
 import 'trainerhome_components/trainer_profile.dart';
@@ -30,7 +31,11 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
 
   void _logout(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
-    Navigator.pushNamedAndRemoveUntil(context, "/login", (route) => false);
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
   }
 
   @override

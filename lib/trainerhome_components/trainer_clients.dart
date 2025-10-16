@@ -7,10 +7,30 @@ class TrainerClientsPage extends StatelessWidget {
 
   Future<void> _updateRequest(String clientId, String status) async {
     final trainerId = FirebaseAuth.instance.currentUser!.uid;
-    await FirebaseFirestore.instance
+    // The document ID is a combination of both UIDs
+    final docId = await _getRequestDocId(trainerId, clientId);
+    if (docId != null) {
+      await FirebaseFirestore.instance
+          .collection("trainer_requests")
+          .doc(docId)
+          .update({"status": status});
+    }
+  }
+
+  // Helper function to find the correct request document ID
+  Future<String?> _getRequestDocId(String trainerId, String clientId) async {
+    // It's safer to query for the document than to guess the ID format
+    final query = await FirebaseFirestore.instance
         .collection("trainer_requests")
-        .doc("$trainerId-$clientId")
-        .update({"status": status});
+        .where("trainerId", isEqualTo: trainerId)
+        .where("clientId", isEqualTo: clientId)
+        .limit(1)
+        .get();
+
+    if (query.docs.isNotEmpty) {
+      return query.docs.first.id;
+    }
+    return null;
   }
 
   @override
@@ -18,6 +38,10 @@ class TrainerClientsPage extends StatelessWidget {
     final trainerId = FirebaseAuth.instance.currentUser!.uid;
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text("My Clients & Requests"),
+        backgroundColor: const Color.fromARGB(255, 238, 255, 65),
+      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection("trainer_requests")
@@ -36,7 +60,6 @@ class TrainerClientsPage extends StatelessWidget {
 
           final requests = snapshot.data!.docs;
 
-          // Separate requests into different lists for a cleaner UI
           final pendingRequests = requests
               .where((doc) => doc['status'] == 'pending')
               .toList();
@@ -90,58 +113,85 @@ class TrainerClientsPage extends StatelessWidget {
     );
   }
 
-  /// Builds each card using data ONLY from the request document.
+  /// ✅ UPDATED WIDGET: Builds each card by fetching fresh client data.
   Widget _buildRequestCard(BuildContext context, DocumentSnapshot request) {
-    final data = request.data() as Map<String, dynamic>;
-    final clientId = data["clientId"];
-    final status = data["status"] ?? "pending";
-    final clientName = data["clientName"] ?? "Client";
-    final clientProfileImage = data["clientProfileImage"];
+    final requestData = request.data() as Map<String, dynamic>;
+    final clientId = requestData["clientId"];
+    final status = requestData["status"] ?? "pending";
 
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundImage:
-              clientProfileImage != null && clientProfileImage.isNotEmpty
-              ? NetworkImage(clientProfileImage)
-              : null,
-          child: clientProfileImage == null || clientProfileImage.isEmpty
-              ? const Icon(Icons.person)
-              : null,
-        ),
-        title: Text(
-          clientName,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          'Status: ${status.toString().capitalize()}',
-          style: TextStyle(color: _getStatusColor(status)),
-        ),
-        trailing: status == "pending"
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(
-                      Icons.check_circle,
-                      color: Colors.green,
-                      size: 28,
-                    ),
-                    onPressed: () => _updateRequest(clientId, "accepted"),
-                    tooltip: 'Accept',
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.cancel, color: Colors.red, size: 28),
-                    onPressed: () => _updateRequest(clientId, "rejected"),
-                    tooltip: 'Reject',
-                  ),
-                ],
-              )
-            : null,
-      ),
+    // Use a FutureBuilder to fetch data from the 'users' collection
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .doc(clientId)
+          .get(),
+      builder: (context, userSnapshot) {
+        // Show a placeholder while loading the user's data
+        if (userSnapshot.connectionState == ConnectionState.waiting) {
+          return const Card(child: ListTile(title: Text("Loading client...")));
+        }
+        if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
+          return Card(child: ListTile(title: Text("Client data not found.")));
+        }
+
+        // Once data is loaded, extract the username and profile image
+        final userData = userSnapshot.data!.data() as Map<String, dynamic>;
+        final clientName =
+            userData['username'] ?? 'Unnamed Client'; // Use 'username'
+        final clientProfileImage = userData['profileImage'];
+
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundImage:
+                  clientProfileImage != null && clientProfileImage.isNotEmpty
+                  ? NetworkImage(clientProfileImage)
+                  : null,
+              child: clientProfileImage == null || clientProfileImage.isEmpty
+                  ? const Icon(Icons.person)
+                  : null,
+            ),
+            title: Text(
+              clientName,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              'Status: ${status.toString().capitalize()}',
+              style: TextStyle(color: _getStatusColor(status)),
+            ),
+            trailing: status == "pending"
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.check_circle,
+                          color: Colors.green,
+                          size: 28,
+                        ),
+                        onPressed: () => _updateRequest(clientId, "accepted"),
+                        tooltip: 'Accept',
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.cancel,
+                          color: Colors.red,
+                          size: 28,
+                        ),
+                        onPressed: () => _updateRequest(clientId, "rejected"),
+                        tooltip: 'Reject',
+                      ),
+                    ],
+                  )
+                : null,
+          ),
+        );
+      },
     );
   }
 
@@ -157,10 +207,9 @@ class TrainerClientsPage extends StatelessWidget {
   }
 }
 
-// Helper extension to capitalize strings
 extension StringExtension on String {
   String capitalize() {
-    if (this.isEmpty) return "";
-    return "${this[0].toUpperCase()}${this.substring(1)}";
+    if (isEmpty) return "";
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }

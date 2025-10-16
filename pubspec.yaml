@@ -46,6 +46,8 @@ dependencies:
   file_picker: ^8.1.2
   url_launcher: ^6.3.1
   http: ^1.2.1 
+  cached_network_image: ^3.2.3
+  flutter_tts: ^3.8.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -70,6 +72,8 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+    # Include entire assets directory so all muscle group images are bundled
+    - assets/
     - assets/splash.jpeg
     - assets/gym.jpg
     - assets/Logo.png

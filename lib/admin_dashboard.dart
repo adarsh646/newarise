@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'login_screen.dart';
 import 'adminhome_components/managetrainer.dart';
 import 'adminhome_components/all_trainers_screen.dart'; // ✅ Import the new screen
+import 'adminhome_components/survey_config_screen.dart';
+import 'adminhome_components/workouts_admin_screen.dart';
+import 'adminhome_components/create_plan_page.dart';
 
 // Main Dashboard Widget
 class AdminDashboard extends StatefulWidget {
@@ -19,8 +23,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     ManageTrainersScreen(),
     AllTrainersScreen(), // New page for viewing/deleting all trainers
     ViewAllUsersScreen(),
-    UploadQualificationsScreen(),
-    ViewWorkoutsScreen(),
+    SurveyConfigScreen(),
+    WorkoutsAdminScreen(),
   ];
 
   void _onItemTapped(int index) {
@@ -31,7 +35,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   void _logout(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
-    Navigator.pushNamedAndRemoveUntil(context, "/login", (route) => false);
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
   }
 
   @override
@@ -55,6 +63,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ],
       ),
       body: Center(child: _pages.elementAt(_selectedIndex)),
+      floatingActionButton: _selectedIndex == 2
+          ? FloatingActionButton.extended(
+              backgroundColor: const Color.fromARGB(255, 238, 255, 65),
+              foregroundColor: Colors.black,
+              icon: const Icon(Icons.add),
+              label: const Text('Create Plan'),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CreatePlanPage()),
+                );
+              },
+            )
+          : null,
       bottomNavigationBar: BottomNavigationBar(
         // ✅ Added a new BottomNavigationBarItem
         items: const <BottomNavigationBarItem>[
@@ -68,8 +90,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           BottomNavigationBarItem(icon: Icon(Icons.group), label: 'All Users'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.school),
-            label: 'Qualifications',
+            icon: Icon(Icons.edit_note),
+            label: 'Survey Config',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.fitness_center),
@@ -87,38 +109,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 }
 
-// --- Placeholder Screens ---
-// You can replace these with your actual screen widgets later.
-
 class ViewAllUsersScreen extends StatelessWidget {
   const ViewAllUsersScreen({super.key});
   @override
   Widget build(BuildContext context) {
     return const Center(
       child: Text('View All Users Screen', style: TextStyle(fontSize: 24)),
-    );
-  }
-}
-
-class UploadQualificationsScreen extends StatelessWidget {
-  const UploadQualificationsScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Upload Qualifications Screen',
-        style: TextStyle(fontSize: 24),
-      ),
-    );
-  }
-}
-
-class ViewWorkoutsScreen extends StatelessWidget {
-  const ViewWorkoutsScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Text('View Workouts Screen', style: TextStyle(fontSize: 24)),
     );
   }
 }

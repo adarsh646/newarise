@@ -22,6 +22,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
 
+  // ✅ Regex for stricter email validation
+  final RegExp _emailRegex = RegExp(
+    r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~-]+@[a-zA-Z0-9]+\.[a-zA-Z]+",
+  );
+
   // 🔹 Google Sign-In (use Web Client ID)
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     clientId:
@@ -52,6 +57,8 @@ class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: Colors.red,
           textColor: Colors.white,
         );
+        // It's good practice to sign out if the Firestore record is missing
+        await FirebaseAuth.instance.signOut();
         return;
       }
 
@@ -76,16 +83,17 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
+        Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => targetScreen),
+          (route) => false,
         );
       }
     } on FirebaseAuthException catch (e) {
       String errorMessage;
       switch (e.code) {
         case 'user-not-found':
-          errorMessage = "No user found for this email.";
+        case 'invalid-credential': // Catches both wrong email and password in newer SDKs
+          errorMessage = "Invalid email or password.";
           break;
         case 'wrong-password':
           errorMessage = "Invalid password.";
@@ -135,12 +143,23 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = userCredential.user;
 
       if (user != null) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'username': user.displayName ?? "Google User",
-          'email': user.email,
-          'role': 'user',
-          'createdAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        // For login, it's better to check if a user exists first
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        if (!doc.exists) {
+          // If they don't exist from a previous Google sign-up, create them
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({
+                'username': user.displayName ?? "Google User",
+                'email': user.email,
+                'role': 'user',
+                'createdAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
+        }
 
         Fluttertoast.showToast(
           msg: "Google Sign-In Successful 🎉",
@@ -149,9 +168,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         if (mounted) {
-          Navigator.pushReplacement(
-            context,
+          Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (_) => const HomeScreen()),
+            (route) => false,
           );
         }
       }
@@ -173,18 +192,22 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // ✅ Helper function updated to accept autovalidateMode
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
     bool obscureText = false,
     required String? Function(String?) validator,
+    AutovalidateMode? autovalidateMode,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: TextFormField(
         controller: controller,
         obscureText: obscureText,
+        // ✅ Apply the autovalidateMode
+        autovalidateMode: autovalidateMode ?? AutovalidateMode.disabled,
         decoration: InputDecoration(
           prefixIcon: Icon(icon),
           labelText: label,
@@ -240,27 +263,35 @@ class _LoginScreenState extends State<LoginScreen> {
                 key: _formKey,
                 child: Column(
                   children: [
+                    // ✅ Email field with instant validation
                     _buildTextField(
                       controller: _emailController,
                       label: "Email",
                       icon: Icons.email,
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
                       validator: (value) {
+                        // ✅ Use the improved regex for validation
                         if (value == null ||
                             value.isEmpty ||
-                            !value.contains('@')) {
+                            !_emailRegex.hasMatch(value)) {
                           return "Enter a valid email";
                         }
                         return null;
                       },
                     ),
                     const SizedBox(height: 15),
+                    // ✅ Password field with instant validation
                     _buildTextField(
                       controller: _passwordController,
                       label: "Password",
                       icon: Icons.lock,
                       obscureText: true,
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
                       validator: (value) {
-                        if (value == null || value.length < 6) {
+                        if (value == null || value.isEmpty) {
+                          return "Password is required";
+                        }
+                        if (value.length < 6) {
                           return "Password must be at least 6 characters";
                         }
                         return null;

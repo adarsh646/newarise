@@ -1,3 +1,4 @@
+import 'dart:async'; // Import for Timer (debouncer)
 import 'package:arise/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -25,17 +26,87 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isLoading = false;
 
+  // State for live email validation
+  Timer? _debounce;
+  String? _emailErrorText;
+  bool _isCheckingEmail = false;
+
+  // ✅ NEW: Regex for stricter email validation
+  final RegExp _emailRegex = RegExp(
+    r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~-]+@[a-zA-Z0-9]+\.[a-zA-Z]+",
+  );
+
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     clientId:
         "814375922264-ep3j6ckbdotdldleohfckr1bn8flcs4h.apps.googleusercontent.com",
   );
 
-  // 🔹 Email/Password Register
+  @override
+  void initState() {
+    super.initState();
+    _emailController.addListener(_onEmailChanged);
+    // ✅ NEW: Listener to re-validate confirm password when password changes
+    _passwordController.addListener(() {
+      if (_confirmPasswordController.text.isNotEmpty) {
+        _formKey.currentState?.validate();
+      }
+    });
+  }
+
+  void _onEmailChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 700), () {
+      _checkEmailAvailability();
+    });
+  }
+
+  Future<void> _checkEmailAvailability() async {
+    final email = _emailController.text.trim();
+    // ✅ MODIFIED: Use the regex for the initial check
+    if (email.isEmpty || !_emailRegex.hasMatch(email)) {
+      setState(() {
+        _emailErrorText = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isCheckingEmail = true;
+    });
+
+    try {
+      final collection = FirebaseFirestore.instance.collection('users');
+      final querySnapshot = await collection
+          .where('email', isEqualTo: email)
+          .get();
+
+      if (mounted) {
+        setState(() {
+          if (querySnapshot.docs.isNotEmpty) {
+            _emailErrorText = "This email is already in use.";
+          } else {
+            _emailErrorText = null;
+          }
+        });
+      }
+    } catch (e) {
+      print("Error checking email: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingEmail = false;
+        });
+      }
+    }
+  }
+
   Future<void> _register() async {
-    if (!_formKey.currentState!.validate()) return;
-
+    if (!_formKey.currentState!.validate() || _emailErrorText != null) {
+      Fluttertoast.showToast(msg: "Please fix the errors before proceeding.");
+      return;
+    }
     setState(() => _isLoading = true);
-
+    // ... rest of the register function is the same
     try {
       final userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
@@ -96,8 +167,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  // 🔹 Google Sign-In
   Future<void> _signInWithGoogle() async {
+    // ... Google Sign-In function is the same
     setState(() => _isLoading = true);
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -141,7 +212,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     } catch (e) {
       Fluttertoast.showToast(
-        msg: "Google Sign-In Failed: $e",
+        msg: "Google Sign-In Failed: ${e.toString()}",
         backgroundColor: Colors.red,
         textColor: Colors.white,
       );
@@ -152,6 +223,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
+    _emailController.removeListener(_onEmailChanged);
+    _passwordController.dispose(); // ✅ Clean up new listener
+    _debounce?.cancel();
     _emailController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
@@ -165,18 +239,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required IconData icon,
     bool obscureText = false,
     required String? Function(String?) validator,
+    AutovalidateMode? autovalidateMode,
+    String? errorText,
+    Widget? suffixIcon,
   }) {
+    // ... this helper function is the same
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: TextFormField(
         controller: controller,
         obscureText: obscureText,
+        autovalidateMode: autovalidateMode ?? AutovalidateMode.disabled,
         decoration: InputDecoration(
           prefixIcon: Icon(icon),
+          suffixIcon: suffixIcon,
           labelText: label,
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          errorText: errorText,
         ),
         validator: validator,
       ),
@@ -197,7 +278,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
           child: ListView(
             children: [
-              // 🔹 Top Image & Logo
+              // ... Top Image & Logo ...
               SizedBox(
                 height: 300,
                 width: double.infinity,
@@ -226,10 +307,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 30),
-
-              // 🔹 Registration Form
               Form(
                 key: _formKey,
                 child: Column(
@@ -238,21 +316,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       controller: _emailController,
                       label: "Email",
                       icon: Icons.email,
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      errorText: _emailErrorText,
+                      suffixIcon: _isCheckingEmail
+                          ? const Padding(
+                              padding: EdgeInsets.all(12.0),
+                              child: SizedBox(
+                                height: 10,
+                                width: 10,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : (_emailErrorText == null &&
+                                _emailController.text.isNotEmpty &&
+                                _emailRegex.hasMatch(_emailController.text))
+                          ? const Icon(Icons.check, color: Colors.green)
+                          : null,
                       validator: (value) {
+                        // ✅ MODIFIED: Using regex for validation
                         if (value == null ||
                             value.isEmpty ||
-                            !value.contains('@')) {
-                          return "Enter a valid email";
+                            !_emailRegex.hasMatch(value)) {
+                          return "Enter a valid email (e.g., name@example.com)";
                         }
                         return null;
                       },
                     ),
                     const SizedBox(height: 15),
-
                     _buildTextField(
                       controller: _usernameController,
                       label: "Username",
                       icon: Icons.person,
+                      // ✅ MODIFIED: Added instant validation
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
                       validator: (value) {
                         if (value == null || value.length < 3) {
                           return "Username must be at least 3 characters";
@@ -261,12 +359,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       },
                     ),
                     const SizedBox(height: 15),
-
                     _buildTextField(
                       controller: _passwordController,
                       label: "Password",
                       icon: Icons.lock,
                       obscureText: true,
+                      // ✅ MODIFIED: Added instant validation
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
                       validator: (value) {
                         if (value == null || value.length < 6) {
                           return "Password must be at least 6 characters";
@@ -275,12 +374,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       },
                     ),
                     const SizedBox(height: 15),
-
                     _buildTextField(
                       controller: _confirmPasswordController,
                       label: "Confirm Password",
                       icon: Icons.lock,
                       obscureText: true,
+                      // ✅ MODIFIED: Added instant validation
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
                       validator: (value) {
                         if (value != _passwordController.text) {
                           return "Passwords do not match";
@@ -289,8 +389,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       },
                     ),
                     const SizedBox(height: 20),
-
-                    // 🔹 Register Button
+                    // ... Register Button and the rest of the UI ...
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: _isLoading
@@ -318,10 +417,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 10),
-
-              // 🔹 Google Sign-in Button
+              // ... Social and other buttons ...
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: ElevatedButton(
@@ -350,10 +447,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 10),
-
-              // 🔹 Register as Trainer Button
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: ElevatedButton(
@@ -378,10 +472,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 40),
-
-              // 🔹 Login Redirect
               Padding(
                 padding: const EdgeInsets.only(bottom: 20),
                 child: TextButton(

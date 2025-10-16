@@ -1,5 +1,10 @@
 import 'package:arise/login_screen.dart';
+import 'package:arise/admin_dashboard.dart';
+import 'package:arise/trainer_dashboard.dart';
+import 'package:arise/home_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -25,11 +30,46 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    Future.delayed(const Duration(seconds: 3), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
+    Future.delayed(const Duration(seconds: 3), () async {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+        return;
+      }
+
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        final role = doc.data()?['role'] ?? 'user';
+        Widget target;
+        switch (role) {
+          case 'admin':
+            target = const AdminDashboard();
+            break;
+          case 'trainer':
+            target = const TrainerDashboard();
+            break;
+          default:
+            target = const HomeScreen();
+        }
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => target),
+        );
+      } catch (_) {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+      }
     });
   }
 

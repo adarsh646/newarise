@@ -25,6 +25,36 @@ class _MyPlanSectionState extends State<MyPlanSection> with AutomaticKeepAliveCl
     _usernameFuture = _fetchUsername();
   }
 
+  Widget _latestPlanCard(String uid) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('fitness_plans')
+          .where('userId', isEqualTo: uid)
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .snapshots(),
+      builder: (context, planSnap) {
+        if (planSnap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (planSnap.hasError) {
+          return const SizedBox.shrink();
+        }
+        final docs = planSnap.data?.docs ?? const [];
+        if (docs.isEmpty) {
+          return _buildNoPlanUI(uid);
+        }
+        final doc = docs.first;
+        final data = doc.data();
+        final Map<String, dynamic> planMap = {
+          ...data,
+          '__planId': doc.id,
+        };
+        return _buildPlanCard(planMap);
+      },
+    );
+  }
+
   Widget _buildPredefinedSection({
     required String section,
     required String title,
@@ -164,33 +194,60 @@ class _MyPlanSectionState extends State<MyPlanSection> with AutomaticKeepAliveCl
               },
             ),
             const SizedBox(height: 16),
-            // --- User's AI-generated plan (latest) ---
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            // --- User's Active AI-generated plan (preferred via plan_progress) ---
+            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
               stream: FirebaseFirestore.instance
-                  .collection('plans')
-                  .where('userId', isEqualTo: uid)
-                  .orderBy('createdAt', descending: true)
-                  .limit(1)
+                  .collection('plan_progress')
+                  .doc(uid)
                   .snapshots(),
-              builder: (context, planSnap) {
-                if (planSnap.connectionState == ConnectionState.waiting) {
+              builder: (context, progressSnap) {
+                if (progressSnap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (planSnap.hasError) {
-                  return const SizedBox.shrink();
+                final progressData = progressSnap.data?.data() ?? {};
+                // Find an active planId in the mapping (keys are planIds with objects containing status/assignedAt)
+                String? activePlanId;
+                Timestamp? latestAssign;
+                progressData.forEach((key, value) {
+                  if (value is Map<String, dynamic>) {
+                    final status = (value['status'] ?? '').toString();
+                    final ts = value['assignedAt'] as Timestamp?;
+                    if (status == 'active') {
+                      if (latestAssign == null || (ts != null && ts.compareTo(latestAssign!) > 0)) {
+                        activePlanId = key;
+                        latestAssign = ts;
+                      }
+                    }
+                  }
+                });
+
+                if (activePlanId != null) {
+                  // Subscribe to that specific plan document for realtime updates
+                  return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('fitness_plans')
+                        .doc(activePlanId)
+                        .snapshots(),
+                    builder: (context, activePlanSnap) {
+                      if (activePlanSnap.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (!activePlanSnap.hasData || !activePlanSnap.data!.exists) {
+                        // Fallback to latest plan if referenced doc missing
+                        return _latestPlanCard(uid);
+                      }
+                      final data = activePlanSnap.data!.data()!;
+                      final Map<String, dynamic> planMap = {
+                        ...data,
+                        '__planId': activePlanId,
+                      };
+                      return _buildPlanCard(planMap);
+                    },
+                  );
                 }
-                final docs = planSnap.data?.docs ?? const [];
-                if (docs.isEmpty) {
-                  // No plan yet; show CTA to get plan via survey
-                  return _buildNoPlanUI(uid);
-                }
-                final doc = docs.first;
-                final data = doc.data();
-                final Map<String, dynamic> planMap = {
-                  ...data,
-                  '__planId': doc.id,
-                };
-                return _buildPlanCard(planMap);
+
+                // Fallback: show the latest plan for this user if no active mapping
+                return _latestPlanCard(uid);
               },
             ),
             const SizedBox(height: 24),

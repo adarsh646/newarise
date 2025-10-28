@@ -49,6 +49,11 @@ android {
     }
 }
 
+dependencies {
+    // Provide ProGuard/R8 annotation classes at compile time to satisfy R8 keeps referenced by libraries (e.g., Razorpay)
+    compileOnly("com.guardsquare:proguard-annotations:7.4.1")
+}
+
 flutter {
     source = "../.."
 }

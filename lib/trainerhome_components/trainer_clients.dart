@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../screens/chat_screen.dart';
+import 'trainer_client_detail_page.dart';
+import '../services/chat_service.dart';
 
 class TrainerClientsPage extends StatelessWidget {
   const TrainerClientsPage({super.key});
@@ -118,6 +121,11 @@ class TrainerClientsPage extends StatelessWidget {
     final requestData = request.data() as Map<String, dynamic>;
     final clientId = requestData["clientId"];
     final status = requestData["status"] ?? "pending";
+    final trainerId = FirebaseAuth.instance.currentUser!.uid;
+    final conversationId = _createConversationId(
+      trainerId,
+      clientId,
+    ); // Pre-compute conversation ID
 
     // Use a FutureBuilder to fetch data from the 'users' collection
     return FutureBuilder<DocumentSnapshot>(
@@ -140,59 +148,174 @@ class TrainerClientsPage extends StatelessWidget {
             userData['username'] ?? 'Unnamed Client'; // Use 'username'
         final clientProfileImage = userData['profileImage'];
 
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          elevation: 3,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundImage:
-                  clientProfileImage != null && clientProfileImage.isNotEmpty
-                  ? NetworkImage(clientProfileImage)
-                  : null,
-              child: clientProfileImage == null || clientProfileImage.isEmpty
-                  ? const Icon(Icons.person)
-                  : null,
-            ),
-            title: Text(
-              clientName,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text(
-              'Status: ${status.toString().capitalize()}',
-              style: TextStyle(color: _getStatusColor(status)),
-            ),
-            trailing: status == "pending"
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.check_circle,
-                          color: Colors.green,
-                          size: 28,
+        // StreamBuilder for unread message count
+        return StreamBuilder<QuerySnapshot>(
+          stream: status == "accepted"
+              ? FirebaseFirestore.instance
+                    .collection('messages')
+                    .doc(conversationId)
+                    .collection('texts')
+                    .where('receiverId', isEqualTo: trainerId)
+                    .where('isRead', isEqualTo: false)
+                    .snapshots()
+              : const Stream.empty(),
+          builder: (context, msgSnapshot) {
+            final unreadCount = msgSnapshot.data?.docs.length ?? 0;
+
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Stack(
+                children: [
+                  ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage:
+                          clientProfileImage != null &&
+                              clientProfileImage.isNotEmpty
+                          ? NetworkImage(clientProfileImage)
+                          : null,
+                      child:
+                          clientProfileImage == null ||
+                              clientProfileImage.isEmpty
+                          ? const Icon(Icons.person)
+                          : null,
+                    ),
+                    title: GestureDetector(
+                      onTap: status == "accepted"
+                          ? () {
+                              // Navigate to client detail page when trainer taps on client name
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => TrainerClientDetailPage(
+                                    clientId: clientId,
+                                    clientName: clientName,
+                                  ),
+                                ),
+                              );
+                            }
+                          : null,
+                      child: Text(
+                        clientName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: status == "accepted"
+                              ? Colors.blue
+                              : Colors.black,
+                          decoration: status == "accepted"
+                              ? TextDecoration.underline
+                              : null,
                         ),
-                        onPressed: () => _updateRequest(clientId, "accepted"),
-                        tooltip: 'Accept',
                       ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.cancel,
+                    ),
+                    subtitle: Text(
+                      'Status: ${status.toString().capitalize()}${status == "accepted" && unreadCount > 0 ? " • $unreadCount new message${unreadCount > 1 ? 's' : ''}" : ""}',
+                      style: TextStyle(
+                        color: unreadCount > 0
+                            ? Colors.red
+                            : _getStatusColor(status),
+                        fontWeight: unreadCount > 0
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: status == "pending"
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green,
+                                  size: 28,
+                                ),
+                                onPressed: () =>
+                                    _updateRequest(clientId, "accepted"),
+                                tooltip: 'Accept',
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.cancel,
+                                  color: Colors.red,
+                                  size: 28,
+                                ),
+                                onPressed: () =>
+                                    _updateRequest(clientId, "rejected"),
+                                tooltip: 'Reject',
+                              ),
+                            ],
+                          )
+                        : status == "accepted"
+                        ? IconButton(
+                            icon: const Icon(
+                              Icons.chat,
+                              color: Colors.blue,
+                              size: 28,
+                            ),
+                            onPressed: () async {
+                              await ChatService().markConversationAsRead(conversationId);
+                              // Navigate to chat screen with this client
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ChatScreen(
+                                    conversationId: conversationId,
+                                    otherUserId: clientId,
+                                    otherUserName: clientName,
+                                    currentUserName:
+                                        userData['username'] ?? 'Trainer',
+                                  ),
+                                ),
+                              );
+                            },
+                            tooltip: 'Chat with client',
+                          )
+                        : null,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                  ),
+                  // Unread notification badge
+                  if (unreadCount > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
                           color: Colors.red,
-                          size: 28,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        onPressed: () => _updateRequest(clientId, "rejected"),
-                        tooltip: 'Reject',
+                        child: Text(
+                          '$unreadCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
-                    ],
-                  )
-                : null,
-          ),
+                    ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
+  }
+
+  /// Create a consistent conversation ID
+  String _createConversationId(String userId1, String userId2) {
+    final ids = [userId1, userId2]..sort();
+    return '${ids[0]}_${ids[1]}';
   }
 
   Color _getStatusColor(String status) {

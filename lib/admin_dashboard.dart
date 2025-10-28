@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'login_screen.dart';
 import 'adminhome_components/managetrainer.dart';
-import 'adminhome_components/all_trainers_screen.dart'; // ✅ Import the new screen
-import 'adminhome_components/survey_config_screen.dart';
+import 'adminhome_components/all_trainers_screen.dart'; 
 import 'adminhome_components/workouts_admin_screen.dart';
 import 'adminhome_components/create_plan_page.dart';
 
@@ -18,12 +17,10 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard> {
   int _selectedIndex = 0;
 
-  // ✅ Added the new AllTrainersScreen to the list of pages
   static const List<Widget> _pages = <Widget>[
     ManageTrainersScreen(),
-    AllTrainersScreen(), // New page for viewing/deleting all trainers
+    AllTrainersScreen(), 
     ViewAllUsersScreen(),
-    SurveyConfigScreen(),
     WorkoutsAdminScreen(),
   ];
 
@@ -78,21 +75,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
             )
           : null,
       bottomNavigationBar: BottomNavigationBar(
-        // ✅ Added a new BottomNavigationBarItem
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
             icon: Icon(Icons.person_add),
-            label: 'Requests', // Renamed for clarity
+            label: 'Requests', 
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.sports), // New icon
+            icon: Icon(Icons.sports), 
             label: 'All Trainers',
           ),
           BottomNavigationBarItem(icon: Icon(Icons.group), label: 'All Users'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.edit_note),
-            label: 'Survey Config',
-          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.fitness_center),
             label: 'Workouts',

@@ -5,10 +5,52 @@ import 'package:url_launcher/url_launcher.dart'; // ✅ Step 1: Import the packa
 class ManageTrainersScreen extends StatelessWidget {
   const ManageTrainersScreen({super.key});
 
-  Future<void> _updateStatus(String docId, String status) async {
-    await FirebaseFirestore.instance.collection("users").doc(docId).update({
-      "status": status,
-    });
+  Future<void> _updateStatus(BuildContext context, String docId, String status) async {
+    try {
+      await FirebaseFirestore.instance.collection("users").doc(docId).update({
+        "status": status,
+      });
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Trainer ${status == 'approved' ? 'approved' : 'rejected'}')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Action failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteTrainer(BuildContext context, String docId, String? name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Trainer Request?'),
+        content: Text('This will permanently remove ${name ?? 'this trainer'}\'s request.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await FirebaseFirestore.instance.collection("users").doc(docId).delete();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Trainer request deleted')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e')),
+        );
+      }
+    }
   }
 
   // ✅ Step 2: Rework the function to launch the URL
@@ -88,11 +130,11 @@ class ManageTrainersScreen extends StatelessWidget {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.check, color: Colors.green),
-                        onPressed: () => _updateStatus(trainer.id, "approved"),
+                        onPressed: () => _updateStatus(context, trainer.id, "approved"),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.red),
-                        onPressed: () => _updateStatus(trainer.id, "rejected"),
+                        onPressed: () => _updateStatus(context, trainer.id, "rejected"),
                       ),
                       IconButton(
                         icon: const Icon(
@@ -104,6 +146,10 @@ class ManageTrainersScreen extends StatelessWidget {
                             _viewCertificate(context, data["certificateUrl"]);
                           }
                         },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
+                        onPressed: () => _deleteTrainer(context, trainer.id, data["name"]),
                       ),
                     ],
                   ),

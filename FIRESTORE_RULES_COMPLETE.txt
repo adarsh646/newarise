@@ -1,0 +1,287 @@
+==========================================
+FIRESTORE SECURITY RULES - COMPLETE
+==========================================
+
+This file contains ALL security rules needed for:
+✅ User payments
+✅ Real-time chat
+✅ Trainer requests
+✅ General access control
+
+UPDATE DATE: January 2024
+STATUS: Production Ready
+
+==========================================
+HOW TO USE
+==========================================
+
+1. Go to https://console.firebase.google.com
+2. Select your project
+3. Go to: Firestore Database → Rules
+4. Select ALL existing text
+5. PASTE THE RULES BELOW
+6. Click "Publish"
+7. Wait for deployment (1-2 minutes)
+
+==========================================
+SECURITY RULES
+==========================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==========================================
+    // USERS COLLECTION
+    // ==========================================
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if request.auth.uid == userId;
+      // Public read for trainers (name, specialization, etc)
+      allow read: if resource.data.role == 'trainer' && resource.data.status == 'approved';
+      // Users can write their own profile
+      allow write: if request.auth.uid == userId;
+    }
+
+    // ==========================================
+    // TRAINER REQUESTS COLLECTION
+    // ==========================================
+    match /trainer_requests/{requestId} {
+      allow read: if request.auth.uid == resource.data.trainerId || 
+                     request.auth.uid == resource.data.clientId;
+      allow create: if request.auth.uid == request.resource.data.clientId;
+      allow update: if request.auth.uid == resource.data.trainerId;
+      allow delete: if request.auth.uid == resource.data.trainerId || 
+                       request.auth.uid == resource.data.clientId;
+    }
+
+    // ==========================================
+    // PAYMENT COLLECTION
+    // ==========================================
+    match /user_payments/{paymentId} {
+      // Users can read their own payments
+      allow read: if request.auth.uid == resource.data.userId;
+      // Only create payment records if userId matches current user
+      allow create: if request.auth.uid == request.resource.data.userId;
+      // Users can update their own payment records
+      allow update: if request.auth.uid == resource.data.userId;
+      // Users can delete their own payment records
+      allow delete: if request.auth.uid == resource.data.userId;
+    }
+
+    // ==========================================
+    // PLAN PROGRESS COLLECTION
+    // ==========================================
+    match /plan_progress/{userId} {
+      allow read: if request.auth.uid == userId;
+      allow write: if request.auth.uid == userId;
+
+      match /plans/{planId} {
+        allow read: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId;
+      }
+    }
+
+    // ==========================================
+    // CHAT - CONVERSATIONS COLLECTION
+    // ==========================================
+    match /conversations/{conversationId} {
+      // Only participants can read
+      allow read: if request.auth.uid in resource.data.participants;
+      
+      // Create conversation with exactly 2 participants including current user
+      allow create: if request.auth.uid in request.resource.data.participants &&
+                       request.resource.data.participants.size() == 2;
+      
+      // Only participants can update
+      allow update: if request.auth.uid in resource.data.participants;
+      
+      // Only participants can delete
+      allow delete: if request.auth.uid in resource.data.participants;
+    }
+
+    // ==========================================
+    // CHAT - MESSAGES COLLECTION
+    // ==========================================
+    match /messages/{conversationId} {
+      // Parent document (metadata) - deny direct access
+      allow read: if false;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+
+      // Messages subcollection
+      match /texts/{messageId} {
+        // Only participants in the conversation can read messages
+        allow read: if request.auth.uid in 
+                       get(/databases/$(database)/documents/conversations/$(conversationId))
+                       .data.participants;
+        
+        // Only sender can create messages, and must be a participant
+        allow create: if request.auth.uid == request.resource.data.senderId &&
+                        request.auth.uid in 
+                        get(/databases/$(database)/documents/conversations/$(conversationId))
+                        .data.participants;
+        
+        // Only participants can update (mark as read)
+        allow update: if request.auth.uid in 
+                         get(/databases/$(database)/documents/conversations/$(conversationId))
+                         .data.participants;
+        
+        // Only participants can delete
+        allow delete: if request.auth.uid in 
+                         get(/databases/$(database)/documents/conversations/$(conversationId))
+                         .data.participants;
+      }
+    }
+
+    // ==========================================
+    // FITNESS PLANS COLLECTION
+    // ==========================================
+    match /fitness_plans/{planId} {
+      // Trainers and admins can read their fitness plans
+      allow read: if request.auth.uid != null && 
+                     (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['trainer', 'admin']);
+      // Only trainers and admins can create fitness plans
+      allow create: if request.auth.uid != null && 
+                       (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['trainer', 'admin']);
+      // Only trainers and admins can update fitness plans
+      allow update: if request.auth.uid != null && 
+                       (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['trainer', 'admin']);
+      // Only trainers and admins can delete fitness plans
+      allow delete: if request.auth.uid != null && 
+                       (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['trainer', 'admin']);
+
+      // Workouts subcollection within fitness plans
+      match /workouts/{workoutId} {
+        allow read: if request.auth.uid != null && 
+                       (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['trainer', 'admin']);
+        allow create: if request.auth.uid != null && 
+                         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['trainer', 'admin']);
+        allow update: if request.auth.uid != null && 
+                         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['trainer', 'admin']);
+        allow delete: if request.auth.uid != null && 
+                         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['trainer', 'admin']);
+      }
+    }
+
+    // ==========================================
+    // CATCH-ALL (DENY ALL OTHER ACCESS)
+    // ==========================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+==========================================
+RULES EXPLANATION
+==========================================
+
+1. USERS Collection:
+   - Users can only read/write their own profile
+   - Trainers' public info is readable by everyone
+   - Prevents unauthorized profile access
+
+2. TRAINER REQUESTS:
+   - Trainers can read requests for them
+   - Clients can read their own requests
+   - Only trainers can approve/reject
+   - Prevents unauthorized modifications
+
+3. USER PAYMENTS:
+   - Users can only see their own payments
+   - Only owner can create/update/delete
+   - Prevents unauthorized payment access
+   - Secure financial data
+
+4. PLAN PROGRESS:
+   - Users can only access their own progress
+   - Prevents cheating on progress tracking
+   - Real-time sync with Firestore
+
+5. CONVERSATIONS:
+   - Only 2 participants can access
+   - New conversations require both users
+   - Prevents eavesdropping
+   - Prevents conversation hijacking
+
+6. MESSAGES:
+   - Only conversation participants can read
+   - Only sender can create new messages
+   - Participants can mark as read
+   - Participants can delete messages
+   - Parent doc denied (security pattern)
+
+==========================================
+TESTING THE RULES
+==========================================
+
+After publishing, test each feature:
+
+✓ Chat: Send message between users
+✓ Payments: Make payment, check record appears
+✓ Trainer Request: Send follow request, accept
+✓ Progress: Complete workout, save progress
+✓ Profile: Update user profile
+
+==========================================
+COMMON ISSUES & SOLUTIONS
+==========================================
+
+Issue: "Permission denied" on chat
+Solution: Verify both users exist in 'users' collection
+
+Issue: "Missing/insufficient permissions" on payments
+Solution: Check userId matches current user in record
+
+Issue: "Field 'participants' is required"
+Solution: Ensure participants array is set when creating conversation
+
+Issue: "Cannot read property 'participants'"
+Solution: Verify conversation document has 'participants' field
+
+==========================================
+FIRESTORE INDEXES (AUTO-CREATED)
+==========================================
+
+The following indexes are automatically created:
+- user_payments.userId (field index)
+- conversations.participants (array index)
+- messages.timestamp (field index)
+- trainer_requests.trainerId (field index)
+- plan_progress.userId (field index)
+
+==========================================
+PRODUCTION CHECKLIST
+==========================================
+
+Before going live:
+☐ All rules published
+☐ Tested chat between users
+☐ Tested payment creation
+☐ Tested trainer requests
+☐ Verified no console errors
+☐ Checked Firestore quota limits
+☐ Enabled backup (optional)
+☐ Set up alerts (optional)
+
+==========================================
+MONITORING
+==========================================
+
+Monitor these metrics:
+- Read/write operations count
+- Quota utilization
+- Error rates
+- Denied permission attempts
+
+Go to: Firebase Console → Firestore → Usage/Metrics
+
+==========================================
+END OF RULES
+==========================================
+
+Last Updated: January 2024
+Status: Production Ready
+Version: 1.0

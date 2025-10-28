@@ -31,39 +31,56 @@ class _SplashScreenState extends State<SplashScreen>
     _controller.forward();
 
     Future.delayed(const Duration(seconds: 3), () async {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-        );
-        return;
-      }
-
       try {
-        final doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-        final role = doc.data()?['role'] ?? 'user';
-        Widget target;
-        switch (role) {
-          case 'admin':
-            target = const AdminDashboard();
-            break;
-          case 'trainer':
-            target = const TrainerDashboard();
-            break;
-          default:
-            target = const HomeScreen();
+        final user = FirebaseAuth.instance.currentUser;
+        debugPrint('Splash: Current user = $user');
+
+        if (user == null) {
+          if (!mounted) return;
+          debugPrint('Splash: No user, navigating to login');
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
+          return;
         }
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => target),
-        );
-      } catch (_) {
+
+        try {
+          debugPrint('Splash: Fetching user role for ${user.uid}');
+          final doc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get();
+          final role = doc.data()?['role'] ?? 'user';
+          debugPrint('Splash: User role = $role');
+
+          Widget target;
+          switch (role) {
+            case 'admin':
+              target = const AdminDashboard();
+              break;
+            case 'trainer':
+              target = const TrainerDashboard();
+              break;
+            default:
+              target = const HomeScreen();
+          }
+          if (!mounted) return;
+          debugPrint('Splash: Navigating to ${target.runtimeType}');
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => target),
+          );
+        } catch (e) {
+          debugPrint('Splash: Error fetching user role: $e');
+          if (!mounted) return;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
+        }
+      } catch (e) {
+        debugPrint('Splash: Unexpected error in initState: $e');
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
@@ -85,10 +102,17 @@ class _SplashScreenState extends State<SplashScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background cloudy image
-          Image.asset(
-            'assets/splash.jpeg', // <-- replace with your cloudy background image
-            fit: BoxFit.cover,
+          // Background with error handling
+          Container(
+            color: const Color(0xFF1a1a2e),
+            child: Image.asset(
+              'assets/splash.jpeg',
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                debugPrint('Failed to load splash image: $error');
+                return Container(color: const Color(0xFF1a1a2e));
+              },
+            ),
           ),
 
           // Dark overlay for better text contrast
@@ -100,10 +124,34 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // App Logo
+                // App Logo with error handling
                 ClipRRect(
                   borderRadius: BorderRadius.circular(20),
-                  child: Image.asset('assets/Logo.png', height: 120),
+                  child: Image.asset(
+                    'assets/Logo.png',
+                    height: 120,
+                    errorBuilder: (context, error, stackTrace) {
+                      debugPrint('Failed to load logo: $error');
+                      return Container(
+                        height: 120,
+                        width: 120,
+                        decoration: BoxDecoration(
+                          color: const Color.fromARGB(255, 238, 255, 65),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'A',
+                            style: TextStyle(
+                              fontSize: 60,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
                 const SizedBox(height: 20),
 

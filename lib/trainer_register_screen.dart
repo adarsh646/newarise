@@ -33,6 +33,10 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
 
   final ImagePicker _picker = ImagePicker();
 
+  String? _verificationId;
+  int? _resendToken;
+  DateTime? _codeSentAt;
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -100,6 +104,9 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
         codeSent: (String verificationId, int? resendToken) async {
           // Step 3: Turn off the loader and show the OTP pop-up dialog
           if (mounted) setState(() => _isLoading = false);
+          _verificationId = verificationId;
+          _resendToken = resendToken;
+          _codeSentAt = DateTime.now();
           String? smsCode = await _showOtpDialog();
 
           if (smsCode != null && smsCode.isNotEmpty) {
@@ -107,8 +114,13 @@ class _TrainerRegisterScreenState extends State<TrainerRegisterScreen> {
             if (mounted) setState(() => _isLoading = true);
 
             try {
+              final vid = _verificationId;
+              if (vid == null) throw Exception('Verification session unavailable. Please resend the code.');
+              if (_codeSentAt != null && DateTime.now().difference(_codeSentAt!).inMinutes >= 5) {
+                throw Exception('The verification code expired. Please tap Resend Code and try again.');
+              }
               PhoneAuthCredential credential = PhoneAuthProvider.credential(
-                verificationId: verificationId,
+                verificationId: vid,
                 smsCode: smsCode,
               );
               // Step 4: Link the phone number to the new account

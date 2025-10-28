@@ -10,10 +10,13 @@ class WorkoutDetailScreen extends StatelessWidget {
 
   Future<Map<String, dynamic>?> _fetchTrainerWorkout() async {
     try {
-      final col = FirebaseFirestore.instance.collection('trainer_workouts');
+      final col = FirebaseFirestore.instance.collection('workouts');
 
       // 1) Try exact name match
-      final exact = await col.where('name', isEqualTo: exerciseName).limit(1).get();
+      final exact = await col
+          .where('name', isEqualTo: exerciseName)
+          .limit(1)
+          .get();
       if (exact.docs.isNotEmpty) return exact.docs.first.data();
 
       // 2) Try case-insensitive by scanning a small subset
@@ -26,9 +29,11 @@ class WorkoutDetailScreen extends StatelessWidget {
           best = data;
           break;
         }
-        final aliases = (data['aliases'] as List?)
+        final aliases =
+            (data['aliases'] as List?)
                 ?.map((e) => e.toString().toLowerCase())
-                .toList() ?? const [];
+                .toList() ??
+            const [];
         if (aliases.contains(exerciseName.toLowerCase())) {
           best = data;
           break;
@@ -62,9 +67,10 @@ class WorkoutDetailScreen extends StatelessWidget {
 
           final instructions = (data['instructions'] ?? '').toString();
           final gifUrl = (data['gifUrl'] ?? data['gif'] ?? '').toString();
-          final tips = (data['tips'] ?? '').toString();
-          final target = (data['target'] ?? data['muscle'] ?? '').toString();
-          final equipment = (data['equipment'] ?? '').toString();
+          final warnings = (data['warnings'] ?? '').toString();
+          final tools = (data['tools'] ?? '').toString();
+          final category = (data['category'] ?? '').toString();
+          final muscleGroup = (data['muscleGroup'] ?? '').toString();
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -85,7 +91,11 @@ class WorkoutDetailScreen extends StatelessWidget {
                 else
                   _imagePlaceholder(),
                 const SizedBox(height: 16),
-                _chipRow(target: target, equipment: equipment),
+                _chipRow(
+                  category: category,
+                  muscleGroup: muscleGroup,
+                  tools: tools,
+                ),
                 const SizedBox(height: 16),
                 const Text(
                   'Instructions',
@@ -98,14 +108,49 @@ class WorkoutDetailScreen extends StatelessWidget {
                       : 'No detailed instructions available for this exercise yet.',
                   style: TextStyle(color: Colors.grey[800], height: 1.5),
                 ),
-                if (tips.isNotEmpty) ...[
+                if (warnings.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  const Text(
-                    'Tips',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E0),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFFE0B2)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_outlined,
+                          color: Color(0xFFFFA000),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Warnings',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF6D4C41),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                warnings,
+                                style: const TextStyle(
+                                  color: Color(0xFF6D4C41),
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(tips, style: TextStyle(color: Colors.grey[800], height: 1.5)),
                 ],
                 const SizedBox(height: 24),
                 SizedBox(
@@ -117,13 +162,15 @@ class WorkoutDetailScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       backgroundColor: const Color(0xFF4CAF50),
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     onPressed: () => _openWorkoutDialog(
                       context: context,
                       gifUrl: gifUrl,
                       instructions: instructions,
-                      warning: (data['warning'] ?? '').toString(),
+                      warning: warnings,
                     ),
                   ),
                 ),
@@ -171,30 +218,30 @@ class WorkoutDetailScreen extends StatelessWidget {
         children: [
           const Icon(Icons.image_not_supported, size: 48, color: Colors.grey),
           const SizedBox(height: 8),
-          Text(
-            'No GIF available',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
+          Text('No GIF available', style: TextStyle(color: Colors.grey[600])),
         ],
       ),
     );
   }
 
-  Widget _chipRow({required String target, required String equipment}) {
+  Widget _chipRow({
+    required String category,
+    required String muscleGroup,
+    required String tools,
+  }) {
     final chips = <Widget>[];
-    if (target.isNotEmpty) {
-      chips.add(_chip('Target: $target', const Color(0xFF2196F3)));
+    if (category.isNotEmpty) {
+      chips.add(_chip('Category: $category', const Color(0xFF2196F3)));
     }
-    if (equipment.isNotEmpty) {
-      chips.add(_chip('Equipment: $equipment', const Color(0xFF9C27B0)));
+    if (muscleGroup.isNotEmpty) {
+      chips.add(_chip('Muscle: $muscleGroup', const Color(0xFF4CAF50)));
+    }
+    if (tools.isNotEmpty) {
+      chips.add(_chip('Tools: $tools', const Color(0xFF9C27B0)));
     }
     if (chips.isEmpty) return const SizedBox.shrink();
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: chips,
-    );
+    return Wrap(spacing: 8, runSpacing: 8, children: chips);
   }
 
   Widget _chip(String label, Color color) {
@@ -226,7 +273,8 @@ Future<void> _openWorkoutDialog({
 
   Future<void> speakAll() async {
     final parts = <String>[];
-    if (instructions.trim().isNotEmpty) parts.add('Instructions: $instructions');
+    if (instructions.trim().isNotEmpty)
+      parts.add('Instructions: $instructions');
     if (warning.trim().isNotEmpty) parts.add('Warning: $warning');
     if (parts.isEmpty) return;
     await tts.setLanguage('en-US');
@@ -242,7 +290,9 @@ Future<void> _openWorkoutDialog({
         builder: (ctx, setState) {
           return Dialog(
             insetPadding: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -271,11 +321,17 @@ Future<void> _openWorkoutDialog({
                         children: [
                           const Text(
                             'Workout Running',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
                             _formatTime(seconds),
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ],
                       ),
@@ -291,12 +347,17 @@ Future<void> _openWorkoutDialog({
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.warning_amber_outlined, color: Color(0xFFFFA000)),
+                              const Icon(
+                                Icons.warning_amber_outlined,
+                                color: Color(0xFFFFA000),
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   warning,
-                                  style: const TextStyle(color: Color(0xFF6D4C41)),
+                                  style: const TextStyle(
+                                    color: Color(0xFF6D4C41),
+                                  ),
                                 ),
                               ),
                             ],
@@ -316,16 +377,21 @@ Future<void> _openWorkoutDialog({
                           ElevatedButton.icon(
                             onPressed: () {
                               if (timer == null) {
-                                timer = Timer.periodic(const Duration(seconds: 1), (_) {
-                                  setState(() => seconds += 1);
-                                });
+                                timer = Timer.periodic(
+                                  const Duration(seconds: 1),
+                                  (_) {
+                                    setState(() => seconds += 1);
+                                  },
+                                );
                                 speakAll();
                               } else {
                                 timer?.cancel();
                                 timer = null;
                               }
                             },
-                            icon: Icon((timer == null) ? Icons.play_arrow : Icons.pause),
+                            icon: Icon(
+                              (timer == null) ? Icons.play_arrow : Icons.pause,
+                            ),
                             label: Text((timer == null) ? 'Start' : 'Pause'),
                           ),
                           ElevatedButton.icon(
@@ -339,7 +405,10 @@ Future<void> _openWorkoutDialog({
                             label: const Text('Reset'),
                           ),
                           ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                            ),
                             onPressed: () {
                               timer?.cancel();
                               tts.stop();

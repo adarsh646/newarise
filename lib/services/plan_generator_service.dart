@@ -21,23 +21,35 @@ class PlanGeneratorService {
       }
 
       final surveyData = surveyDoc.data()!;
-      Map<String, dynamic>? generatedPlan =
-          await _generatePlanViaRapidApi(
-            userId: userId,
-            surveyData: surveyData,
-          );
+      Map<String, dynamic>? generatedPlan = await _generatePlanViaRapidApi(
+        userId: userId,
+        surveyData: surveyData,
+      );
       // Network fallback: if API is unreachable, synthesize a local plan so user isn't blocked
-      generatedPlan ??= _generateLocalPlan(userId: userId, surveyData: surveyData)
-        ..addAll({'source': 'local_network_fallback'});
+      generatedPlan ??= _generateLocalPlan(
+        userId: userId,
+        surveyData: surveyData,
+      )..addAll({'source': 'local_network_fallback'});
 
-      // Save to both legacy 'plans' and new 'fitness_plans' collections.
-      // This ensures backward compatibility with existing UI while enabling
-      // the new collection requested.
+      // Save only to 'fitness_plans' (Option A) to comply with rules that
+      // allow users to manage their own plans when 'userId' matches auth uid.
       final db = FirebaseFirestore.instance;
-      await Future.wait([
-        db.collection('plans').add(generatedPlan),
-        db.collection('fitness_plans').add(generatedPlan),
-      ]);
+      final fitnessPlansRef = db.collection('fitness_plans').doc();
+      await fitnessPlansRef.set({
+        ...generatedPlan,
+        // Ensure required ownership field is present for rules
+        'userId': userId,
+        // Keep createdAt if provided by generator, and set/update updatedAt
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Link the fitness plan to the client in plan_progress
+      await db.collection('plan_progress').doc(userId).set({
+        fitnessPlansRef.id: {
+          'assignedAt': FieldValue.serverTimestamp(),
+          'status': 'active',
+        },
+      }, SetOptions(merge: true));
     } catch (e) {
       print("Error generating and saving plan: $e");
       throw e;
@@ -55,7 +67,9 @@ class PlanGeneratorService {
       // On Flutter Web, browser CORS will block most RapidAPI requests.
       // Use a local fallback plan so the app continues to work on Chrome/Web.
       if (kIsWeb) {
-        print('[PlanGen] Web detected. Using local fallback plan to avoid CORS.');
+        print(
+          '[PlanGen] Web detected. Using local fallback plan to avoid CORS.',
+        );
         return _generateLocalPlan(userId: userId, surveyData: surveyData);
       }
       // Endpoint per provider docs: POST /generateWorkoutPlan?noqueue=1
@@ -135,7 +149,9 @@ class PlanGeneratorService {
         print('[PlanGen] RapidAPI planner failed: ${response!.statusCode}');
         print('[PlanGen] Response headers: ${response!.headers}');
         print('[PlanGen] Response body: ${response!.body}');
-        throw Exception('RapidAPI error ${response!.statusCode}: ${response!.body}');
+        throw Exception(
+          'RapidAPI error ${response!.statusCode}: ${response!.body}',
+        );
       }
 
       dynamic decoded = json.decode(response!.body);
@@ -153,7 +169,8 @@ class PlanGeneratorService {
           : <String, dynamic>{'plan': decoded};
 
       // Extract a normalized plan object.
-      dynamic planContent = body['plan'] ?? body['workouts'] ?? body['data'] ?? body['result'];
+      dynamic planContent =
+          body['plan'] ?? body['workouts'] ?? body['data'] ?? body['result'];
       // If the plan content is itself a JSON string, try to decode it.
       if (planContent is String) {
         final String trimmed = planContent.trim();
@@ -172,19 +189,32 @@ class PlanGeneratorService {
       final Map<String, dynamic> normalizedPlan = hasDays
           ? {
               // keep API structure when it already contains days/workouts
-              ...((planContent is Map<String, dynamic>) ? planContent : <String, dynamic>{}),
+              ...((planContent is Map<String, dynamic>)
+                  ? planContent
+                  : <String, dynamic>{}),
               if (planContent is List) 'days': planContent,
             }
           : {
               'level': (surveyData['activityLevel'] ?? 'Beginner').toString(),
               'goal': (surveyData['goal'] ?? 'Overall Fitness').toString(),
-              'daysPerWeek': (surveyData['daysPerWeek'] is int) ? surveyData['daysPerWeek'] as int : 3,
-              'sessionDuration': (surveyData['sessionDuration'] is int) ? surveyData['sessionDuration'] as int : 45,
-              'weeks': (surveyData['planDurationWeeks'] is int) ? surveyData['planDurationWeeks'] as int : 4,
-              'days': _generateLocalPlan(userId: userId, surveyData: surveyData)['plan']['days'],
+              'daysPerWeek': (surveyData['daysPerWeek'] is int)
+                  ? surveyData['daysPerWeek'] as int
+                  : 3,
+              'sessionDuration': (surveyData['sessionDuration'] is int)
+                  ? surveyData['sessionDuration'] as int
+                  : 45,
+              'weeks': (surveyData['planDurationWeeks'] is int)
+                  ? surveyData['planDurationWeeks'] as int
+                  : 4,
+              'days': _generateLocalPlan(
+                userId: userId,
+                surveyData: surveyData,
+              )['plan']['days'],
             };
       if (!hasDays) {
-        print('[PlanGen] API returned no explicit days/exercises; synthesized local days for device.');
+        print(
+          '[PlanGen] API returned no explicit days/exercises; synthesized local days for device.',
+        );
       }
 
       // Normalize and store the plan
@@ -210,29 +240,43 @@ class PlanGeneratorService {
       if (content.isEmpty) return false;
       final first = content.first;
       if (first is Map<String, dynamic>) {
-        return first.containsKey('exercises') || first.containsKey('title') || first.containsKey('day');
+        return first.containsKey('exercises') ||
+            first.containsKey('title') ||
+            first.containsKey('day');
       }
       return false;
     }
     if (content is Map<String, dynamic>) {
       if (content['days'] is List) return true;
       if (content['workouts'] is List) return true;
-      const weekdays = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+      const weekdays = [
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ];
       for (final w in weekdays) {
-        if (content.containsKey(w) || content.containsKey('${w[0].toUpperCase()}${w.substring(1)}')) {
+        if (content.containsKey(w) ||
+            content.containsKey('${w[0].toUpperCase()}${w.substring(1)}')) {
           return true;
         }
       }
       for (final k in content.keys) {
         final kl = k.toLowerCase();
-        if (kl.startsWith('day ') || RegExp(r'^day\s*\d+').hasMatch(kl) || RegExp(r'^day_?\d+').hasMatch(kl)) {
+        if (kl.startsWith('day ') ||
+            RegExp(r'^day\s*\d+').hasMatch(kl) ||
+            RegExp(r'^day_?\d+').hasMatch(kl)) {
           return true;
         }
       }
     }
     if (content is String) {
       final s = content.trim();
-      if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+      if ((s.startsWith('{') && s.endsWith('}')) ||
+          (s.startsWith('[') && s.endsWith(']'))) {
         try {
           return _looksLikeDaysStructure(json.decode(s));
         } catch (_) {
@@ -299,10 +343,7 @@ class PlanGeneratorService {
         ];
       }
 
-      return {
-        'title': 'Day $dayNum - $focus',
-        'exercises': exercises,
-      };
+      return {'title': 'Day $dayNum - $focus', 'exercises': exercises};
     });
 
     return {
@@ -337,14 +378,21 @@ class PlanGeneratorService {
     if (normalized.contains('weight loss')) {
       return (day % 2 == 0) ? 'HIIT/Cardio' : 'Full-body Strength';
     }
-    if (normalized.contains('weight gain') || normalized.contains('muscle') || normalized.contains('build')) {
+    if (normalized.contains('weight gain') ||
+        normalized.contains('muscle') ||
+        normalized.contains('build')) {
       return (day % 2 == 0) ? 'Lower Body Strength' : 'Upper Body Strength';
     }
     if (normalized.contains('flexibility') || normalized.contains('mobility')) {
       return (day % 2 == 0) ? 'Stretching & Mobility' : 'Core Stability';
     }
     // Default rotation
-    const options = ['Full-body Strength', 'Cardio', 'Core & Stability', 'Mobility'];
+    const options = [
+      'Full-body Strength',
+      'Cardio',
+      'Core & Stability',
+      'Mobility',
+    ];
     return options[(day - 1) % options.length];
   }
 }

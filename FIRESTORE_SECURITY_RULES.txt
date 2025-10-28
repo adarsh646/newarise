@@ -1,0 +1,93 @@
+// Add these rules to your Firestore Security Rules
+// Go to Firebase Console → Firestore Database → Rules → Paste these
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow authenticated users to read/write their own data
+    match /users/{userId} {
+      allow read: if request.auth.uid != null;
+      allow write: if request.auth.uid == userId;
+    }
+
+    // Trainer requests collection
+    match /trainer_requests/{document=**} {
+      allow create: if request.auth.uid != null;
+      allow read: if request.auth.uid != null;
+      allow update, delete: if request.auth.uid != null;
+    }
+
+    // ✅ ADD THIS FOR PAYMENT TRACKING
+    match /user_payments/{document=**} {
+      // Only the user who made the payment can create and read their payments
+      allow create: if request.auth.uid != null;
+      allow read: if request.auth.uid == resource.data.userId;
+      allow update, delete: if request.auth.uid == resource.data.userId;
+    }
+
+    // Plan progress collection
+    match /plan_progress/{userId}/{document=**} {
+      allow read, write: if request.auth.uid == userId;
+    }
+
+    // Allow anyone to read approved trainers (for listing)
+    match /users/{trainerId} {
+      allow read: if get(/databases/$(database)/documents/users/$(trainerId)).data.role == 'trainer' && get(/databases/$(database)/documents/users/$(trainerId)).data.status == 'approved';
+    }
+  }
+}
+
+// ============================================
+// IMPORTANT: Implementation Instructions
+// ============================================
+// 1. Copy the entire rules block above
+// 2. Go to your Firebase Console
+// 3. Navigate to: Firestore Database → Rules tab
+// 4. Replace the existing rules with the code above
+// 5. Click "Publish"
+// 6. Wait for the rules to deploy (usually 1-2 minutes)
+// 7. Test that payments can be saved
+
+// ============================================
+// Collection Structure Reference
+// ============================================
+
+/*
+FIRESTORE COLLECTIONS:
+
+1. users/
+   - uid: string
+   - username: string
+   - email: string
+   - profileImage: string
+   - role: string (user, trainer, admin)
+   - status: string (approved, pending)
+   - name: string (for trainers)
+   - specialization: string
+   - qualification: string
+   - experience: number
+   - fee: number
+
+2. trainer_requests/
+   - trainerId-clientId: string (document ID)
+   - trainerId: string
+   - trainerName: string
+   - trainerProfileImage: string
+   - clientId: string
+   - clientName: string
+   - clientProfileImage: string
+   - status: string (pending, accepted, rejected)
+   - timestamp: timestamp
+
+3. user_payments/ ✅ NEW
+   - auto-generated ID
+   - userId: string (user who paid)
+   - trainerId: string (trainer being paid for)
+   - trainerName: string
+   - amount: number (in rupees)
+   - paymentId: string (from Razorpay)
+   - orderId: string (from Razorpay)
+   - signature: string (from Razorpay)
+   - timestamp: timestamp
+   - status: string (completed, failed, pending)
+*/

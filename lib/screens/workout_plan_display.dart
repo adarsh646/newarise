@@ -9,8 +9,9 @@ import 'workout_detail.dart';
 class WorkoutPlanDisplayScreen extends StatefulWidget {
   final Map<String, dynamic> plan;
   final String? planId;
+  final int? initialTab;
 
-  const WorkoutPlanDisplayScreen({Key? key, required this.plan, this.planId})
+  const WorkoutPlanDisplayScreen({Key? key, required this.plan, this.planId, this.initialTab})
     : super(key: key);
 
   @override
@@ -54,6 +55,9 @@ class _WorkoutPlanDisplayScreenState extends State<WorkoutPlanDisplayScreen>
   @override
   void initState() {
     super.initState();
+    if (widget.initialTab != null) {
+      _currentWeek = widget.initialTab!.clamp(0, 2);
+    }
     _initializeAnimations();
     // Subscribe to live plan updates if a planId is provided
     if (widget.planId != null && widget.planId!.isNotEmpty) {

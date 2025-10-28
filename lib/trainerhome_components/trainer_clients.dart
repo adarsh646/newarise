@@ -186,7 +186,6 @@ class TrainerClientsPage extends StatelessWidget {
                     title: GestureDetector(
                       onTap: status == "accepted"
                           ? () {
-                              // Navigate to client detail page when trainer taps on client name
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -202,12 +201,8 @@ class TrainerClientsPage extends StatelessWidget {
                         clientName,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: status == "accepted"
-                              ? Colors.blue
-                              : Colors.black,
-                          decoration: status == "accepted"
-                              ? TextDecoration.underline
-                              : null,
+                          color: status == "accepted" ? Colors.blue : Colors.black,
+                          decoration: status == "accepted" ? TextDecoration.underline : null,
                         ),
                       ),
                     ),
@@ -222,6 +217,19 @@ class TrainerClientsPage extends StatelessWidget {
                             : FontWeight.normal,
                       ),
                     ),
+                    onTap: status == "accepted"
+                        ? () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => TrainerClientDetailPage(
+                                  clientId: clientId,
+                                  clientName: clientName,
+                                ),
+                              ),
+                            );
+                          }
+                        : null,
                     trailing: status == "pending"
                         ? Row(
                             mainAxisSize: MainAxisSize.min,
@@ -255,9 +263,11 @@ class TrainerClientsPage extends StatelessWidget {
                               color: Colors.blue,
                               size: 28,
                             ),
-                            onPressed: () async {
-                              await ChatService().markConversationAsRead(conversationId);
-                              // Navigate to chat screen with this client
+                            onPressed: () {
+                              // Open chat via icon; mark as read (ignore permission errors)
+                              try {
+                                ChatService().markConversationAsRead(conversationId);
+                              } catch (_) {}
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -265,8 +275,7 @@ class TrainerClientsPage extends StatelessWidget {
                                     conversationId: conversationId,
                                     otherUserId: clientId,
                                     otherUserName: clientName,
-                                    currentUserName:
-                                        userData['username'] ?? 'Trainer',
+                                    currentUserName: userData['username'] ?? 'Trainer',
                                   ),
                                 ),
                               );
@@ -279,26 +288,42 @@ class TrainerClientsPage extends StatelessWidget {
                       vertical: 8,
                     ),
                   ),
-                  // Unread notification badge
+                  // Unread notification badge (tappable to open chat)
                   if (unreadCount > 0)
                     Positioned(
                       top: 8,
                       right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '$unreadCount',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
+                      child: GestureDetector(
+                        onTap: () {
+                          try { ChatService().markConversationAsRead(conversationId); } catch (_) {}
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ChatScreen(
+                                conversationId: conversationId,
+                                otherUserId: clientId,
+                                otherUserName: clientName,
+                                currentUserName: userData['username'] ?? 'Trainer',
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '$unreadCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ),

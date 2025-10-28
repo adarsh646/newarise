@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:arise/screens/workout_plan_display.dart';
+import 'package:arise/trainerhome_components/client_progress.dart';
 
 class ClientPlanPage extends StatefulWidget {
   final String clientId;
@@ -342,9 +344,11 @@ class _ClientPlanPageState extends State<ClientPlanPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => WorkoutPlanDisplayScreen(
-          plan: plan,
+        builder: (_) => ClientProgressPage(
+          clientId: widget.clientId,
+          clientName: widget.clientName,
           planId: planId,
+          planTitle: plan['title'] ?? 'AI Workout Plan',
         ),
       ),
     );
@@ -768,6 +772,9 @@ class _ClientPlanPageState extends State<ClientPlanPage> {
                 controller: setsController,
                 decoration: const InputDecoration(labelText: 'Sets', border: OutlineInputBorder()),
                 keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
               ),
             ),
             const SizedBox(width: 12),
@@ -776,6 +783,9 @@ class _ClientPlanPageState extends State<ClientPlanPage> {
                 controller: repsController,
                 decoration: const InputDecoration(labelText: 'Reps', border: OutlineInputBorder()),
                 keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
               ),
             ),
           ],
@@ -784,12 +794,32 @@ class _ClientPlanPageState extends State<ClientPlanPage> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () async {
+              final parsedSets = int.tryParse(setsController.text.trim());
+              final parsedReps = int.tryParse(repsController.text.trim());
+
+              final sets = parsedSets ?? _asInt(exercise['sets'], 3);
+              final reps = parsedReps ?? _asInt(exercise['reps'], 12);
+
+              // Validation: sets 1-5, reps 1-19
+              if (sets < 1 || sets >= 6) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Sets must be between 1 and 5')),
+                );
+                return;
+              }
+              if (reps < 1 || reps >= 20) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Reps must be between 1 and 19')),
+                );
+                return;
+              }
+
               await _updateExerciseInDay(
                 planId: planId,
                 dayIndex: dayIndex,
                 exerciseIndex: exerciseIndex,
-                sets: int.tryParse(setsController.text.trim()) ?? _asInt(exercise['sets'], 3),
-                reps: int.tryParse(repsController.text.trim()) ?? _asInt(exercise['reps'], 12),
+                sets: sets,
+                reps: reps,
               );
               if (mounted) setState(() {});
               if (context.mounted) Navigator.pop(ctx);

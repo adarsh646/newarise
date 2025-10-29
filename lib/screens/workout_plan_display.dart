@@ -131,6 +131,12 @@ class _WorkoutPlanDisplayScreenState extends State<WorkoutPlanDisplayScreen>
     });
   }
 
+  int get _currentWeekNumber {
+    if (_allDays.isEmpty) return 1;
+    final n = ((_selectedDayNumber - 1) ~/ 7) + 1;
+    return n.clamp(1, _totalWeeks);
+  }
+
   // -------- Progress Persistence --------
   String? get _userId => FirebaseAuth.instance.currentUser?.uid;
   String? get _planId => widget.planId;
@@ -414,11 +420,10 @@ class _WorkoutPlanDisplayScreenState extends State<WorkoutPlanDisplayScreen>
 
     if (!allCompleted) return;
 
-    // Mark week as completed once and advance to next week; uncheck this week's items
+    // Mark week as completed; reset this week's checkboxes and advance
     setState(() {
-      if (_completedWeeks < currentWeekNumber) {
-        _completedWeeks = currentWeekNumber;
-      }
+      // Increment weeks completed (capped to total weeks)
+      _completedWeeks = (_completedWeeks + 1).clamp(0, _totalWeeks);
 
       // Uncheck all exercises in the completed week
       for (int i = 0; i < weekDays.length; i++) {
@@ -431,17 +436,22 @@ class _WorkoutPlanDisplayScreenState extends State<WorkoutPlanDisplayScreen>
         }
       }
 
-      // Advance selection to the next week's first day if available
+      // Move to next week's first day; if not defined, wrap to day 1 (repeat workouts)
       final nextWeekStartDay = (currentWeekNumber * 7) + 1; // 1-based
       if (nextWeekStartDay <= _allDays.length) {
         _selectedDayNumber = nextWeekStartDay;
+      } else {
+        _selectedDayNumber = 1; // repeat from first week's first day
       }
     });
 
     _saveProgress();
+    final nextWeek = (_completedWeeks < _totalWeeks)
+        ? ' Starting week ${_completedWeeks + 1}.'
+        : '';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Week $currentWeekNumber of $_totalWeeks completed!'),
+        content: Text('Week $currentWeekNumber of $_totalWeeks completed!$nextWeek'),
       ),
     );
   }
@@ -516,7 +526,7 @@ class _WorkoutPlanDisplayScreenState extends State<WorkoutPlanDisplayScreen>
                       ),
                     ),
                     Text(
-                      'Personalized Fitness',
+                      'Week ${_currentWeekNumber} of $_totalWeeks',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

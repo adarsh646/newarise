@@ -7,6 +7,8 @@ import 'services/plan_generator_service.dart';
 import 'userhome_components/trainer_section.dart';
 import 'userhome_components/user_workouts.dart';
 import 'userhome_components/myplan.dart';
+import 'services/calorie_knn.dart';
+import 'widgets/calorie_prediction_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -168,6 +170,43 @@ class _HomeScreenState extends State<HomeScreen> {
                                           ),
                                         );
                                         if (context.mounted) setState(() {});
+                                      },
+                                    ),
+                                    ElevatedButton.icon(
+                                      icon: const Icon(Icons.local_fire_department),
+                                      label: const Text('View Calories'),
+                                      style: ElevatedButton.styleFrom(
+                                        minimumSize: const Size(160, 44),
+                                      ),
+                                      onPressed: () {
+                                        final survey = UserSurvey(
+                                          age: int.tryParse(surveyData['age']?.toString() ?? '') ?? 25,
+                                          gender: (surveyData['gender'] ?? 'male').toString(),
+                                          heightCm: double.tryParse(surveyData['height']?.toString() ?? '') ?? 170.0,
+                                          weightKg: double.tryParse(surveyData['weight']?.toString() ?? '') ?? 70.0,
+                                          activityLevel: (surveyData['activityLevel'] ?? 'moderate').toString(),
+                                          goal: (surveyData['goal'] ?? 'maintain').toString(),
+                                        );
+                                        showModalBottomSheet(
+                                          context: context,
+                                          isScrollControlled: true,
+                                          shape: const RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                                          ),
+                                          builder: (_) => DraggableScrollableSheet(
+                                            expand: false,
+                                            initialChildSize: 0.6,
+                                            minChildSize: 0.4,
+                                            maxChildSize: 0.9,
+                                            builder: (ctx, controller) => SingleChildScrollView(
+                                              controller: controller,
+                                              child: Padding(
+                                                padding: const EdgeInsets.all(12.0),
+                                                child: CaloriePredictionCard(survey: survey),
+                                              ),
+                                            ),
+                                          ),
+                                        );
                                       },
                                     ),
                                     OutlinedButton.icon(
